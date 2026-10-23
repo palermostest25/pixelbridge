@@ -178,7 +178,9 @@ public final class DeviceSession: ObservableObject {
                 map[name] = host
             }
             portMap = map
-            let key = pairing.load(serial: serial)
+            set(.connecting, "reading saved pairing from Keychain—approve PixelBridge if macOS asks")
+            let pairingSerial = serial
+            let key = await Task.detached { PairingStore().load(serial: pairingSerial) }.value
             var control: ChannelClient?
             for attempt in 0..<10 where control == nil {
                 do { control = try await ChannelClient.connect(port: map["control"]!, channel: "control", key: key) }

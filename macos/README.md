@@ -11,7 +11,7 @@ cd macos
 open /Applications/PixelBridge.app
 ```
 
-This installs an app with a local signature and includes a Dock icon. Camera preview works independently
+This installs an app with a local signature and includes a Dock icon. Set `PIXELBRIDGE_SIGN_IDENTITY` to your existing Apple signing identity for a stable local signature across updates. Ad-hoc rebuilds may ask macOS Keychain to approve access to the saved pairing again. Camera preview works independently
 of the virtual camera extension. If OBS 30 or later's virtual camera is already installed and enabled,
 PixelBridge sends frames directly into it: start the phone camera in PixelBridge, then select
 **OBS Virtual Camera** in your calling app. OBS itself can remain closed; its virtual camera must not

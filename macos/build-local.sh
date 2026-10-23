@@ -19,7 +19,7 @@ swiftc -O -swift-version 5 -I "$build_dir" -L "$build_dir" -lPixelBridgeKit \
 cp Resources/LocalInfo.plist "$app_dir/Contents/Info.plist"
 cp Resources/PixelBridge.icns "$app_dir/Contents/Resources/PixelBridge.icns"
 printf 'APPL????' > "$app_dir/Contents/PkgInfo"
-codesign --force --sign - "$app_dir"
+codesign --force --sign "${PIXELBRIDGE_SIGN_IDENTITY:--}" "$app_dir"
 codesign --verify --deep --strict "$app_dir"
 printf 'Built %s\n' "$app_dir"
 if [[ "${1:-}" == "--install" ]]; then
