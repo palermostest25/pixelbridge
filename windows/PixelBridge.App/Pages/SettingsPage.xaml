@@ -1,0 +1,39 @@
+<UserControl x:Class="PixelBridge.App.Pages.SettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:PixelBridge.App.Controls">
+    <StackPanel MaxWidth="860" HorizontalAlignment="Stretch">
+        <TextBlock Text="Settings" Style="{StaticResource PageTitle}"/>
+        <TextBlock Text="Startup" Style="{StaticResource SectionTitle}" Margin="2,0,0,8"/>
+        <c:SettingCard Header="Start with Windows" Description="Runs in the notification area when you sign in" Glyph="&#xE7E8;">
+            <CheckBox x:Name="Startup" Style="{StaticResource ToggleSwitch}" Click="Changed"/>
+        </c:SettingCard>
+        <c:SettingCard Header="Connect automatically" Description="Connect as soon as the Pixel is plugged in" Glyph="&#xE71B;">
+            <CheckBox x:Name="AutoConnect" Style="{StaticResource ToggleSwitch}" Click="Changed"/>
+        </c:SettingCard>
+        <TextBlock Text="Features" Style="{StaticResource SectionTitle}"/>
+        <c:SettingCard Header="PixelBridge Camera for Windows apps" Glyph="&#xE714;">
+            <CheckBox x:Name="Vcam" Style="{StaticResource ToggleSwitch}" Click="Changed"/>
+        </c:SettingCard>
+        <c:SettingCard Header="Developer sensor API" Description="Read-only, this PC only, token required (applies after restart)" Glyph="&#xE943;">
+            <CheckBox x:Name="Api" Style="{StaticResource ToggleSwitch}" Click="Changed"/>
+        </c:SettingCard>
+        <c:SettingCard Header="Battery temperature warning" Description="Notify me when the phone battery gets this warm" Glyph="&#xE9CA;">
+            <ComboBox x:Name="TempWarn" MinWidth="110" SelectionChanged="TempChanged">
+                <ComboBoxItem Content="38 °C"/><ComboBoxItem Content="40 °C"/><ComboBoxItem Content="42 °C"/>
+            </ComboBox>
+        </c:SettingCard>
+        <TextBlock Text="Advanced" Style="{StaticResource SectionTitle}"/>
+        <Border Style="{StaticResource Card}">
+            <StackPanel>
+                <TextBlock Text="Phone serial" Style="{StaticResource Secondary}"/>
+                <TextBox x:Name="Serial" Margin="0,4,0,12" LostFocus="Changed"/>
+                <TextBlock Text="adb.exe location (empty = find automatically)" Style="{StaticResource Secondary}"/>
+                <TextBox x:Name="AdbPath" Margin="0,4,0,12" LostFocus="Changed"/>
+                <TextBlock Text="scrcpy.exe location" Style="{StaticResource Secondary}"/>
+                <TextBox x:Name="ScrcpyPath" Margin="0,4,0,0" LostFocus="Changed"/>
+            </StackPanel>
+        </Border>
+        <TextBlock x:Name="About" Style="{StaticResource Secondary}" Margin="2,12,0,0"/>
+    </StackPanel>
+</UserControl>

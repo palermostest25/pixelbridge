@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="PixelBridge.App/PixelBridge.App.csproj" />
+  <Project Path="PixelBridge.Cli/PixelBridge.Cli.csproj" />
+  <Project Path="PixelBridge.Core/PixelBridge.Core.csproj" />
+  <Project Path="PixelBridge.Media/PixelBridge.Media.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="PixelBridge.Tests/PixelBridge.Tests.csproj" />
+</Solution>

@@ -1,0 +1,21 @@
+artifacts/
+**/build/
+**/.gradle/
+local.properties
+**/bin/
+**/obj/
+*.user
+.vs/
+windows/**/x64/
+# Native build outputs
+windows/native-bin/
+windows/**/obj/
+*.pdb
+
+SPEC.md
+HANDOFF.local.md
+*.local.md
+android/local.properties
+
+**/PixelBridge/logs/
+**/PixelBridge/settings.json

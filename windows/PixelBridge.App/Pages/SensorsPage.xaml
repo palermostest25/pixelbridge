@@ -1,0 +1,91 @@
+<UserControl x:Class="PixelBridge.App.Pages.SensorsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:PixelBridge.App.Controls">
+    <StackPanel>
+        <TextBlock Text="Motion sensors" Style="{StaticResource PageTitle}"/>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="340"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Border Style="{StaticResource Card}" Padding="0">
+                <Grid>
+                    <Viewport3D x:Name="OrientationView" Height="300">
+                        <Viewport3D.Camera>
+                            <PerspectiveCamera Position="0,0,4.2" LookDirection="0,0,-1" UpDirection="0,1,0" FieldOfView="42"/>
+                        </Viewport3D.Camera>
+                        <ModelVisual3D>
+                            <ModelVisual3D.Content>
+                                <Model3DGroup x:Name="Scene">
+                                    <AmbientLight Color="#666"/>
+                                    <DirectionalLight Color="#FFF" Direction="-0.4,-0.5,-1"/>
+                                </Model3DGroup>
+                            </ModelVisual3D.Content>
+                        </ModelVisual3D>
+                    </Viewport3D>
+                    <StackPanel VerticalAlignment="Bottom" Margin="16,0,16,14">
+                        <TextBlock x:Name="EulerText" Style="{StaticResource Mono}" Foreground="{DynamicResource TextFillColorPrimaryBrush}" FontSize="13"/>
+                        <TextBlock Text="Live orientation · rotate the phone" Style="{StaticResource Secondary}"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <StackPanel Grid.Column="2">
+                <Border Style="{StaticResource Card}" Padding="8" Height="96"><c:SensorPlot x:Name="AccelPlot" Title="Accelerometer" Unit="m/s²" MinRange="2"/></Border>
+                <Border Style="{StaticResource Card}" Padding="8" Height="96"><c:SensorPlot x:Name="GyroPlot" Title="Gyroscope" Unit="rad/s" MinRange="0.5"/></Border>
+                <Border Style="{StaticResource Card}" Padding="8" Height="96"><c:SensorPlot x:Name="MagPlot" Title="Magnetometer" Unit="µT" MinRange="20"/></Border>
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Text="All sensors" Style="{StaticResource SectionTitle}"/>
+        <Border Style="{StaticResource Card}">
+            <ItemsControl x:Name="SensorList">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,4,16,8">
+                            <TextBlock Text="{Binding Name}" Style="{StaticResource Secondary}"/>
+                            <TextBlock Text="{Binding Value}" FontFamily="Cascadia Mono, Consolas" FontSize="13"/>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Border>
+
+        <TextBlock Text="Options" Style="{StaticResource SectionTitle}"/>
+        <c:SettingCard Header="Sample rate" Description="Android may deliver slightly more or less than requested" Glyph="&#xE916;">
+            <ComboBox x:Name="Rate" MinWidth="170" SelectionChanged="Rate_Changed">
+                <ComboBoxItem Content="Low power · 5 Hz" Tag="5"/>
+                <ComboBoxItem Content="Standard · 50 Hz" Tag="50"/>
+                <ComboBoxItem Content="High · 100 Hz" Tag="100"/>
+            </ComboBox>
+        </c:SettingCard>
+        <c:SettingCard Header="Export to CSV" Description="Records 60 seconds to Documents\PixelBridge" Glyph="&#xE74E;">
+            <Button x:Name="ExportButton" Content="Export" MinWidth="110" Click="Export_Click"/>
+        </c:SettingCard>
+        <c:SettingCard Header="Tilt to move the mouse" Description="Uses the gyroscope. Press Ctrl+Alt+P to stop at any time" Glyph="&#xE962;">
+            <CheckBox x:Name="Tilt" Style="{StaticResource ToggleSwitch}" Click="Tilt_Click"/>
+        </c:SettingCard>
+        <c:SettingCard Header="OSC output" Description="UDP to 127.0.0.1:9000 for TouchDesigner, VRChat and similar (takes effect after restart)" Glyph="&#xE968;">
+            <CheckBox x:Name="Osc" Style="{StaticResource ToggleSwitch}" Click="Osc_Click"/>
+        </c:SettingCard>
+        <Border Style="{StaticResource Card}">
+            <StackPanel>
+                <DockPanel>
+                    <Button DockPanel.Dock="Right" Content="Copy" Click="CopyApi_Click"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE943;" Style="{StaticResource Glyph}" Margin="0,0,14,0"/>
+                        <StackPanel>
+                            <TextBlock Text="Developer API" Style="{StaticResource BodyTextBlockStyle}"/>
+                            <TextBlock Text="Read-only WebSocket stream on this PC only. Keep the token private." Style="{StaticResource Secondary}"/>
+                        </StackPanel>
+                    </StackPanel>
+                </DockPanel>
+                <TextBox x:Name="ApiUrl" IsReadOnly="True" Margin="0,10,0,0" FontFamily="Cascadia Mono, Consolas" FontSize="12"/>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

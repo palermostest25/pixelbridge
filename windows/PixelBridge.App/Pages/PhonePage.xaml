@@ -1,0 +1,32 @@
+<UserControl x:Class="PixelBridge.App.Pages.PhonePage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:PixelBridge.App.Controls">
+    <StackPanel MaxWidth="860" HorizontalAlignment="Stretch">
+        <TextBlock Text="Phone screen" Style="{StaticResource PageTitle}"/>
+        <Border Style="{StaticResource Card}" Padding="24,20">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Style="{StaticResource AccentButtonStyle}" Content="Show phone screen" Padding="16,7" VerticalAlignment="Center" Click="Mirror_Click"/>
+                <TextBlock Text="&#xE7F4;" Style="{StaticResource Glyph}" FontSize="28" Margin="0,0,18,0"/>
+                <StackPanel>
+                    <TextBlock Text="Control the phone from this PC" Style="{StaticResource SubtitleTextBlockStyle}" FontSize="18"/>
+                    <TextBlock Text="The Pixel's display doesn't work, so use this window to answer Android permission prompts and change phone settings. Uses scrcpy over the same USB cable." Style="{StaticResource Secondary}" Margin="0,4,12,0"/>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <c:SettingCard Header="Open PixelBridge on a separate virtual screen" Description="Useful if the main screen is locked or busy" Glyph="&#xE7F9;">
+            <Button Content="Open" Click="VirtualDisplay_Click"/>
+        </c:SettingCard>
+        <c:SettingCard Header="Bring the phone app to the front" Description="Needed after a phone restart before the camera or microphone can start" Glyph="&#xE8A7;">
+            <Button Content="Bring to front" Click="Launch_Click"/>
+        </c:SettingCard>
+
+        <TextBlock Text="Phone app" Style="{StaticResource SectionTitle}"/>
+        <c:SettingCard x:Name="AppCard" Header="PixelBridge for Android" Glyph="&#xE74C;">
+            <Button Content="Install or update…" Click="Install_Click"/>
+        </c:SettingCard>
+        <c:SettingCard Header="Pairing" Description="Removes this PC's key. You'll need to pair again" Glyph="&#xE8D7;">
+            <Button Content="Unpair" Click="Unpair_Click"/>
+        </c:SettingCard>
+    </StackPanel>
+</UserControl>

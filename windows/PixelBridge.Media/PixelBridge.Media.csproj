@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\PixelBridge.Core\PixelBridge.Core.csproj" />
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\native-bin\Release\PixelBridge.Native.dll" Link="PixelBridge.Native.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\native-bin\Release\PixelBridge.Native.dll')" />
+    <None Include="..\native-bin\Release\PixelBridge.VirtualCam.dll" Link="PixelBridge.VirtualCam.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\native-bin\Release\PixelBridge.VirtualCam.dll')" />
+  </ItemGroup>
+</Project>

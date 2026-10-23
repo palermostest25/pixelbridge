@@ -1,0 +1,84 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="PixelBridge.Linux.App"
+             RequestedThemeVariant="Default">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="PbWindow" Color="#F3F3F3"/>
+                    <SolidColorBrush x:Key="PbSidebar" Color="#EBEBEB"/>
+                    <SolidColorBrush x:Key="PbCard" Color="#FFFFFF"/>
+                    <SolidColorBrush x:Key="PbCardStroke" Color="#E5E5E5"/>
+                    <SolidColorBrush x:Key="PbText" Color="#1A1A1A"/>
+                    <SolidColorBrush x:Key="PbTextSecondary" Color="#5F5F5F"/>
+                    <SolidColorBrush x:Key="PbSubtle" Color="#0F000000"/>
+                    <SolidColorBrush x:Key="PbAttention" Color="#EAF3FC"/>
+                    <SolidColorBrush x:Key="PbCaution" Color="#9D5D00"/>
+                    <SolidColorBrush x:Key="PbSuccess" Color="#0F7B0F"/>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="PbWindow" Color="#202020"/>
+                    <SolidColorBrush x:Key="PbSidebar" Color="#1A1A1A"/>
+                    <SolidColorBrush x:Key="PbCard" Color="#2B2B2B"/>
+                    <SolidColorBrush x:Key="PbCardStroke" Color="#1F000000"/>
+                    <SolidColorBrush x:Key="PbText" Color="#FFFFFF"/>
+                    <SolidColorBrush x:Key="PbTextSecondary" Color="#C5C5C5"/>
+                    <SolidColorBrush x:Key="PbSubtle" Color="#15FFFFFF"/>
+                    <SolidColorBrush x:Key="PbAttention" Color="#1A2B3D"/>
+                    <SolidColorBrush x:Key="PbCaution" Color="#FCE100"/>
+                    <SolidColorBrush x:Key="PbSuccess" Color="#6CCB5F"/>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+    <Application.Styles>
+        <FluentTheme/>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{DynamicResource PbCard}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource PbCardStroke}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="16"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+        <Style Selector="TextBlock.title">
+            <Setter Property="FontSize" Value="28"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="0,0,0,18"/>
+        </Style>
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Margin" Value="2,16,0,8"/>
+        </Style>
+        <Style Selector="TextBlock.secondary">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource PbTextSecondary}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="TextBlock.mono">
+            <Setter Property="FontFamily" Value="DejaVu Sans Mono, Cascadia Mono, monospace"/>
+            <Setter Property="FontSize" Value="12"/>
+        </Style>
+        <Style Selector="ListBox.nav ListBoxItem">
+            <Setter Property="Padding" Value="14,9"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Margin" Value="4,1"/>
+        </Style>
+    </Application.Styles>
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <TrayIcon Icon="/Assets/pixelbridge.ico" ToolTipText="PixelBridge" Clicked="Tray_Clicked">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Show PixelBridge" Click="Show_Click"/>
+                        <NativeMenuItem Header="Privacy mode" Click="Privacy_Click"/>
+                        <NativeMenuItemSeparator/>
+                        <NativeMenuItem Header="Quit" Click="Quit_Click"/>
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
+</Application>

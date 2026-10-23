@@ -1,0 +1,58 @@
+# XcodeGen spec: `brew install xcodegen && xcodegen generate` creates PixelBridge.xcodeproj.
+name: PixelBridge
+options:
+  bundleIdPrefix: dev.pixelbridge
+  deploymentTarget:
+    macOS: "14.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "0.2.1"
+    CURRENT_PROJECT_VERSION: "4"
+    DEVELOPMENT_TEAM: ""          # set your Apple Developer Team ID (required for the camera extension)
+packages:
+  PixelBridgeKit:
+    path: .
+targets:
+  PixelBridge:
+    type: application
+    platform: macOS
+    sources: [App]
+    dependencies:
+      - package: PixelBridgeKit
+      - target: PixelBridgeCamera   # system-extension targets embed into Contents/Library/SystemExtensions
+        embed: true
+        codeSign: true
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleDisplayName: PixelBridge
+        LSApplicationCategoryType: public.app-category.utilities
+        NSCameraUsageDescription: PixelBridge shows the Pixel's camera feed.
+        NSMicrophoneUsageDescription: Not used; the microphone comes from the phone.
+        NSSystemExtensionUsageDescription: Installs the PixelBridge Camera so other apps can use the Pixel as a webcam.
+    entitlements:
+      path: App/PixelBridge.entitlements
+      properties:
+        com.apple.developer.system-extension.install: true
+        com.apple.security.application-groups: [$(TeamIdentifierPrefix)dev.pixelbridge]
+  PixelBridgeCamera:
+    type: system-extension
+    platform: macOS
+    sources: [CameraExtension]
+    info:
+      path: CameraExtension/Info.plist
+      properties:
+        CMIOExtension:
+          CMIOExtensionMachServiceName: $(TeamIdentifierPrefix)dev.pixelbridge.camera
+    entitlements:
+      path: CameraExtension/PixelBridgeCamera.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.application-groups: [$(TeamIdentifierPrefix)dev.pixelbridge]
+  PixelBridgeKitTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [Tests/PixelBridgeKitTests]
+    dependencies:
+      - package: PixelBridgeKit

@@ -1,0 +1,232 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PixelBridge.Linux.MainWindow"
+        Title="PixelBridge" Width="1180" Height="780" MinWidth="900" MinHeight="600"
+        Icon="/Assets/pixelbridge.ico" Background="{DynamicResource PbWindow}">
+    <Grid ColumnDefinitions="240,*">
+        <!-- Sidebar -->
+        <DockPanel Background="{DynamicResource PbSidebar}">
+            <StackPanel DockPanel.Dock="Top" Margin="16,18,16,14" Spacing="12">
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Border Width="30" Height="30" CornerRadius="8" Background="{DynamicResource SystemAccentColor}">
+                        <Border Width="11" Height="18" CornerRadius="2" BorderThickness="2" BorderBrush="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="PixelBridge" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Border CornerRadius="12" Padding="10,4" HorizontalAlignment="Left" Background="{DynamicResource PbSubtle}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Ellipse x:Name="StatusDot" Width="8" Height="8" Fill="Gray" VerticalAlignment="Center"/>
+                        <TextBlock x:Name="StatusText" Text="Starting…" FontSize="12"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+            <ListBox x:Name="Nav" Classes="nav" Background="Transparent" SelectionChanged="Nav_Changed">
+                <ListBoxItem Content="Home" Tag="home"/>
+                <ListBoxItem Content="Camera" Tag="camera"/>
+                <ListBoxItem Content="Microphone" Tag="mic"/>
+                <ListBoxItem Content="Motion sensors" Tag="sensors"/>
+                <ListBoxItem Content="Location" Tag="location"/>
+                <ListBoxItem Content="Internet sharing" Tag="network"/>
+                <ListBoxItem Content="Bluetooth" Tag="bluetooth"/>
+                <ListBoxItem Content="Phone screen" Tag="phone"/>
+                <ListBoxItem Content="Settings" Tag="settings"/>
+            </ListBox>
+        </DockPanel>
+
+        <Grid Grid.Column="1">
+            <ScrollViewer>
+                <StackPanel Margin="36,28" MaxWidth="1000">
+                    <!-- HOME -->
+                    <StackPanel x:Name="PageHome">
+                        <Border Classes="card" Padding="26,22">
+                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                <Border Width="58" Height="104" CornerRadius="12" BorderThickness="3" BorderBrush="{DynamicResource PbTextSecondary}" Background="#101114" Margin="0,0,24,0">
+                                    <TextBlock x:Name="HeroMark" Text="—" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#88FFFFFF" FontSize="20"/>
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                                    <TextBlock x:Name="DeviceName" Text="Your phone" FontSize="30" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="DeviceStatus" Classes="secondary" FontSize="14"/>
+                                    <WrapPanel x:Name="Chips" Margin="0,8,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="12" HorizontalAlignment="Right">
+                                    <Button x:Name="ConnectButton" Classes="accent" Content="Connect" MinWidth="140" HorizontalContentAlignment="Center" Click="Connect_Click"/>
+                                    <ToggleSwitch x:Name="PrivacySwitch" OnContent="Privacy mode" OffContent="Privacy mode" Click="Privacy_Click"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <Border x:Name="ActionCard" Classes="card" IsVisible="False" Background="{DynamicResource PbAttention}">
+                            <DockPanel>
+                                <Button x:Name="ActionButton" DockPanel.Dock="Right" Classes="accent" Click="Action_Click"/>
+                                <StackPanel>
+                                    <TextBlock x:Name="ActionTitle" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="ActionText" Classes="secondary"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Border>
+                        <TextBlock Classes="section" Text="Features"/>
+                        <UniformGrid x:Name="Tiles" Columns="3"/>
+                        <Grid ColumnDefinitions="*,12,*" Margin="0,8,0,0">
+                            <Border Classes="card">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Battery" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="BatteryBig" Text="—" FontSize="32" FontWeight="SemiBold"/>
+                                    <ProgressBar x:Name="BatteryBar" Maximum="100" Height="4"/>
+                                    <TextBlock x:Name="BatteryDetail" Classes="secondary"/>
+                                    <TextBlock Classes="secondary" Foreground="{DynamicResource PbCaution}"
+                                               Text="If the phone gets hot, swells or smells unusual, stop and unplug it."/>
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="2" Classes="card">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="Connection" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="LinkSummary"/>
+                                    <TextBlock x:Name="LinkPorts" Classes="mono secondary"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+
+                    <!-- CAMERA -->
+                    <StackPanel x:Name="PageCamera" IsVisible="False">
+                        <DockPanel Margin="0,0,0,18">
+                            <Button x:Name="CamButton" DockPanel.Dock="Right" Classes="accent" Content="Start camera" Click="Cam_Click"/>
+                            <TextBlock Classes="title" Text="Camera" Margin="0"/>
+                        </DockPanel>
+                        <Border CornerRadius="10" Background="#0B0C0E" ClipToBounds="True">
+                            <Grid Height="400">
+                                <Image x:Name="Preview" Stretch="Uniform"/>
+                                <TextBlock x:Name="PreviewText" Text="Camera is off" Foreground="#AAFFFFFF" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                <Border x:Name="LiveChip" IsVisible="False" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Top" CornerRadius="12" Padding="10,4" Background="#AA000000">
+                                    <TextBlock x:Name="LiveText" Foreground="White" FontSize="12" FontWeight="SemiBold"/>
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
+                            <RadioButton x:Name="Rear" Content="Rear" GroupName="cam" Click="CamSel_Click" Tag="0"/>
+                            <RadioButton x:Name="Front" Content="Front" GroupName="cam" Click="CamSel_Click" Tag="1"/>
+                        </StackPanel>
+                        <Border Classes="card" Margin="0,12,0,0">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Linux webcam (v4l2loopback)" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="LoopbackText" Classes="secondary"/>
+                                <Button Content="Set up PixelBridge Camera…" Click="SetupCam_Click" HorizontalAlignment="Left"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- MICROPHONE -->
+                    <StackPanel x:Name="PageMic" IsVisible="False">
+                        <DockPanel Margin="0,0,0,18">
+                            <Button x:Name="MicButton" DockPanel.Dock="Right" Classes="accent" Content="Start microphone" Click="Mic_Click"/>
+                            <TextBlock Classes="title" Text="Microphone" Margin="0"/>
+                        </DockPanel>
+                        <Border Classes="card" Padding="22">
+                            <StackPanel Spacing="10">
+                                <TextBlock x:Name="MicState" Text="Microphone is off" FontSize="18" FontWeight="SemiBold"/>
+                                <ProgressBar x:Name="MicLevel" Minimum="-60" Maximum="0" Height="8"/>
+                                <TextBlock Classes="secondary" Text="When on, apps can choose “PixelBridge-Microphone” as their input. It's a PulseAudio/PipeWire virtual source, needs no root, and is removed when you turn it off."/>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="card">
+                            <DockPanel>
+                                <ToggleSwitch x:Name="MuteSwitch" DockPanel.Dock="Right" Click="Mute_Click"/>
+                                <TextBlock Text="Mute" VerticalAlignment="Center"/>
+                            </DockPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- SENSORS -->
+                    <StackPanel x:Name="PageSensors" IsVisible="False">
+                        <TextBlock Classes="title" Text="Motion sensors"/>
+                        <Border Classes="card"><TextBlock x:Name="SensorTable" Classes="mono" TextWrapping="Wrap"/></Border>
+                        <Border Classes="card">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Developer API (read-only, this PC only)" FontWeight="SemiBold"/>
+                                <SelectableTextBlock x:Name="ApiUrl" Classes="mono"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- LOCATION -->
+                    <StackPanel x:Name="PageLocation" IsVisible="False">
+                        <DockPanel Margin="0,0,0,18">
+                            <Button x:Name="LocButton" DockPanel.Dock="Right" Classes="accent" Content="Start location" Click="Loc_Click"/>
+                            <TextBlock Classes="title" Text="Location" Margin="0"/>
+                        </DockPanel>
+                        <Border Classes="card" Padding="22">
+                            <StackPanel Spacing="6">
+                                <TextBlock x:Name="LocTitle" Text="Location is off" FontSize="18" FontWeight="SemiBold"/>
+                                <SelectableTextBlock x:Name="LocCoords" FontSize="22" FontFamily="DejaVu Sans Mono, monospace"/>
+                                <TextBlock x:Name="LocDetail" Classes="secondary"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- NETWORK -->
+                    <StackPanel x:Name="PageNetwork" IsVisible="False">
+                        <TextBlock Classes="title" Text="Internet sharing"/>
+                        <Border Classes="card" Padding="22">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="USB tethering" Classes="secondary"/>
+                                <TextBlock x:Name="TetherTitle" Text="Checking…" FontSize="20" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="TetherDetail" Classes="secondary"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="card">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Phone Wi-Fi" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="WifiText" Classes="secondary"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Classes="secondary" Text="Linux uses the phone through its cdc_ncm driver, with no install needed. It's an internet connection, not a Wi-Fi card. Turn the hotspot on from the phone."/>
+                    </StackPanel>
+
+                    <!-- BLUETOOTH -->
+                    <StackPanel x:Name="PageBluetooth" IsVisible="False">
+                        <DockPanel Margin="0,0,0,18">
+                            <Button x:Name="BleButton" DockPanel.Dock="Right" Classes="accent" Content="Scan nearby" Click="Ble_Click"/>
+                            <TextBlock Classes="title" Text="Bluetooth" Margin="0"/>
+                        </DockPanel>
+                        <Border Classes="card"><TextBlock x:Name="BleList" Classes="mono" TextWrapping="Wrap" Text="Press Scan nearby."/></Border>
+                    </StackPanel>
+
+                    <!-- PHONE -->
+                    <StackPanel x:Name="PagePhone" IsVisible="False">
+                        <TextBlock Classes="title" Text="Phone screen"/>
+                        <Border Classes="card">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Classes="accent" Content="Show phone screen" Click="Scrcpy_Click"/>
+                                <TextBlock Classes="secondary" VerticalAlignment="Center" Text="Uses scrcpy over the same USB cable. Use it to answer Android permission prompts."/>
+                            </DockPanel>
+                        </Border>
+                        <Border Classes="card">
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Content="Pair" Click="Pair_Click"/>
+                                <TextBlock x:Name="PairText" VerticalAlignment="Center"/>
+                            </DockPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- SETTINGS -->
+                    <StackPanel x:Name="PageSettings" IsVisible="False">
+                        <TextBlock Classes="title" Text="Settings"/>
+                        <Border Classes="card">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Phone serial (empty = the only phone attached)" Classes="secondary"/>
+                                <TextBox x:Name="SerialBox"/>
+                                <ToggleSwitch x:Name="AutoConnect" OnContent="Connect automatically" OffContent="Connect automatically"/>
+                                <ToggleSwitch x:Name="Autostart" OnContent="Start when I log in" OffContent="Start when I log in"/>
+                                <Button Classes="accent" Content="Save" Click="Save_Click" HorizontalAlignment="Left"/>
+                                <TextBlock x:Name="AboutText" Classes="secondary"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+            <Border x:Name="Toast" IsVisible="False" VerticalAlignment="Bottom" HorizontalAlignment="Center" Margin="0,0,0,22" Padding="16,10" CornerRadius="8"
+                    Background="{DynamicResource PbCard}" BorderBrush="{DynamicResource PbCardStroke}" BorderThickness="1">
+                <TextBlock x:Name="ToastText" TextWrapping="Wrap" MaxWidth="560"/>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
