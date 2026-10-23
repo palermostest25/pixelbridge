@@ -16,7 +16,6 @@ public partial class CameraPage : UserControl, IPage
     private WriteableBitmap? _bitmap;
     private byte[] _bgra = [];
     private int _busy;
-    private volatile bool _visible;
     private bool _loading = true;
     private DispatcherTimer? _zoomTimer;
     private string _lensSignature = "";
@@ -40,7 +39,7 @@ public partial class CameraPage : UserControl, IPage
 
     private void OnFrame(Nv12Frame f)
     {
-        if (!_visible || Stopwatch.GetElapsedTime(_lastPreview).TotalMilliseconds < 66 || Interlocked.Exchange(ref _busy, 1) == 1) return; // drop when the UI is behind
+        if (!_c.PreviewVisible || Stopwatch.GetElapsedTime(_lastPreview).TotalMilliseconds < 66 || Interlocked.Exchange(ref _busy, 1) == 1) return; // drop when the UI is behind
         _lastPreview = Stopwatch.GetTimestamp();
         int stride = f.Width * 4;
         if (_bgra.Length != stride * f.Height) _bgra = new byte[stride * f.Height];
@@ -62,9 +61,8 @@ public partial class CameraPage : UserControl, IPage
 
     public void Tick()
     {
-        _visible = MainWindow.Current?.IsPageVisible(this) == true;
         var controls = _c.Camera;
-        var signature = string.Join("|", controls.Lenses);
+        var signature = string.Join("|", controls.Lenses.Select(l => $"{l.CameraId}:{l.Title}:{l.Zoom}"));
         if (signature != _lensSignature)
         {
             _loading = true; _lensSignature = signature; Lens.ItemsSource = controls.Lenses;
@@ -145,7 +143,8 @@ public partial class CameraPage : UserControl, IPage
     private void Pause_Click(object sender, RoutedEventArgs e)
     {
         _c.Video.Paused = Pause.IsChecked == true;
-        if (_c.Video.Paused) _c.Video.GoOffline(paused: true);
+        if (_c.Video.Paused) { _c.Session.StopStream("video"); _c.Video.GoOffline(paused: true); }
+        else if (_c.CameraRequested) _c.StartCamera();
     }
 
     private void OpenCamera_Click(object sender, RoutedEventArgs e) =>

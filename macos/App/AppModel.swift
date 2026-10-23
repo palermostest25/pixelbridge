@@ -33,6 +33,8 @@ struct WifiNetwork: Identifiable, Hashable {
 
 struct SensorPoint: Identifiable { let id: Int; let t: Double; let x: Float, y: Float, z: Float }
 
+@MainActor final class VideoPreviewState: ObservableObject { @Published var buffer: CVPixelBuffer? }
+
 /// All UI state for the macOS app; mirrors windows/PixelBridge.App/AppController.cs.
 @MainActor
 final class AppModel: NSObject, ObservableObject {
@@ -43,7 +45,8 @@ final class AppModel: NSObject, ObservableObject {
     let audio = AudioPlayer()
     private var bag = Set<AnyCancellable>()
 
-    @Published var preview: CVPixelBuffer?
+    let videoPreview = VideoPreviewState()
+    var preview: CVPixelBuffer? { get { videoPreview.buffer } set { videoPreview.buffer = newValue } }
     @Published var fps: Double = 0
     @Published var savePower = UserDefaults.standard.object(forKey: "savePower") as? Bool ?? true { didSet { UserDefaults.standard.set(savePower, forKey: "savePower"); if cameraOn { startCamera() } } }
     @Published var cameraOn = false
@@ -151,7 +154,7 @@ final class AppModel: NSObject, ObservableObject {
             self.appliedZoom = (config["appliedZoomRatio"] as? NSNumber)?.doubleValue
         }.store(in: &bag)
         session.videoFrame.sink { [weak self] f in self?.decoder.decode(f.payload, timestampNs: f.timestampNs) }.store(in: &bag)
-        session.audioFrame.sink { [weak self] f in self?.audio.push(f.payload); self?.micLevel = self?.audio.levelDbfs ?? -120 }.store(in: &bag)
+        session.audioFrame.sink { [weak self] f in guard let self, self.micOn, !self.privacy else { return }; self.audio.push(f.payload); self.micLevel = self.audio.levelDbfs }.store(in: &bag)
         session.battery.sink { [weak self] b in self?.battery = b }.store(in: &bag)
         session.location.sink { [weak self] l in if self?.privacy == false { self?.location = l } }.store(in: &bag)
         session.sensor.sink { [weak self] s in self?.onSensor(s) }.store(in: &bag)

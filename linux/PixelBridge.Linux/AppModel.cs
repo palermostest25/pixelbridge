@@ -61,7 +61,7 @@ public sealed class AppModel : IAsyncDisposable
             if (CameraOn) Video.Start((int?)c["width"] ?? 1280, (int?)c["height"] ?? 720, toLoopback: true, CameraControls.Rotation(Settings, c), Settings.PreviewMirror);
         };
         Session.VideoFrame += f => Video.Feed(f.Payload, f.Flags.HasFlag(FrameFlags.Keyframe), f.Flags.HasFlag(FrameFlags.CodecConfig));
-        Session.AudioFrame += f => Mic.Push(f.Payload);
+        Session.AudioFrame += f => { if (!Privacy && MicOn) Mic.Push(f.Payload); };
         Session.StreamEvent += (t, j) =>
         {
             if (t != MsgType.StreamError) return;

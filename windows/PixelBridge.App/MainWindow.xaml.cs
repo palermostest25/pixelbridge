@@ -97,6 +97,7 @@ public partial class MainWindow : Window
 
     private void Tick()
     {
+        _c.PreviewVisible = IsVisible && WindowState != WindowState.Minimized && PageHost.Content is CameraPage;
         _c.Session.SetSensorDemand("page", IsVisible && WindowState != WindowState.Minimized && PageHost.Content is SensorsPage);
         _c.Session.SetSensorDemand("tilt", _c.Tilt.Enabled);
         if (!IsVisible || WindowState == WindowState.Minimized) return;

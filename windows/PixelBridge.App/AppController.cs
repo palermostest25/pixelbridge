@@ -46,6 +46,7 @@ public sealed class AppController : IAsyncDisposable
     public string VirtualCameraState { get; private set; } = "not started";
     public bool VirtualCameraActive { get; private set; }
 
+    public volatile bool PreviewVisible;
     public event Action<SensorSample>? SensorReceived;
     public event Action<Nv12Frame>? PreviewFrame;
     public event Action<string>? Toast;
@@ -72,7 +73,7 @@ public sealed class AppController : IAsyncDisposable
 
         Session.Sensor += OnSensor;
         Session.Battery += OnBattery;
-        Session.AudioFrame += f => Audio.Push(f.Payload);
+        Session.AudioFrame += f => { if (!PrivacyMode && MicRequested) Audio.Push(f.Payload); };
         Session.VideoFrame += OnVideoFrameForRecording;
         Session.Notification += OnNotification;
         Session.StreamEvent += OnStreamEvent;
@@ -137,6 +138,7 @@ public sealed class AppController : IAsyncDisposable
         CameraRequested = true;
         CameraError = null;
         Video.Paused = false;
+        Video.Enabled = true;
         Session.StartStream("video", new { cameraId = Settings.CameraId, width = Settings.VideoWidth, height = Settings.VideoHeight,
             fps = Settings.SavePower ? Math.Min(15, Settings.VideoFps) : Settings.VideoFps, bitrate = Settings.VideoBitrate, zoomRatio = Settings.CameraZoom, stabilization = Settings.CameraStabilization });
     }
@@ -231,6 +233,8 @@ public sealed class AppController : IAsyncDisposable
         Nmea?.Publish(f);
         if (Settings.ApiIncludeLocation) Api?.PublishLocation(f);
     }
+
+    public void SetOsc(bool on) { Settings.OscEnabled = on; Settings.Save(); Osc?.Dispose(); Osc = on ? new OscExporter(Settings.OscPort) : null; Session.SetSensorDemand("osc", on); }
 
     public void SetSensorRate(int hz)
     {

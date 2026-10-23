@@ -19,7 +19,13 @@ swiftc -O -swift-version 5 -I "$build_dir" -L "$build_dir" -lPixelBridgeKit \
 cp Resources/LocalInfo.plist "$app_dir/Contents/Info.plist"
 cp Resources/PixelBridge.icns "$app_dir/Contents/Resources/PixelBridge.icns"
 printf 'APPL????' > "$app_dir/Contents/PkgInfo"
-codesign --force --sign "${PIXELBRIDGE_SIGN_IDENTITY:--}" "$app_dir"
+signing_identity="${PIXELBRIDGE_SIGN_IDENTITY:--}"
+# A sole existing Apple identity keeps local updates trusted by Keychain. CI remains ad-hoc.
+if [[ "${1:-}" == "--install" && -z "${PIXELBRIDGE_SIGN_IDENTITY:-}" ]]; then
+  identities=$(security find-identity -v -p codesigning | sed -n 's/.*) \([0-9A-F]\{40\}\) ".*/\1/p')
+  if [[ $(printf '%s\n' "$identities" | sed '/^$/d' | wc -l | tr -d ' ') == 1 ]]; then signing_identity="$identities"; fi
+fi
+codesign --force --sign "$signing_identity" "$app_dir"
 codesign --verify --deep --strict "$app_dir"
 printf 'Built %s\n' "$app_dir"
 if [[ "${1:-}" == "--install" ]]; then

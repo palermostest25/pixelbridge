@@ -19,6 +19,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _timer;
     private WriteableBitmap? _bitmap;
     private int _busy;
+    private volatile bool _previewVisible;
     private bool _allowClose;
     private int _tetherCountdown;
     private bool _loadingCamera = true;
@@ -96,7 +97,7 @@ public partial class MainWindow : Window
 
     private void OnPreview(byte[] bgra, int w, int h)
     {
-        if (!IsVisible || WindowState == WindowState.Minimized || _page != "camera" || Interlocked.Exchange(ref _busy, 1) == 1) return;
+        if (!_previewVisible || Interlocked.Exchange(ref _busy, 1) == 1) return;
         Dispatcher.UIThread.Post(() =>
         {
             try
@@ -115,6 +116,7 @@ public partial class MainWindow : Window
 
     private void Tick()
     {
+        _previewVisible = IsVisible && WindowState != WindowState.Minimized && _page == "camera";
         _m.Session.SetSensorDemand("page", IsVisible && WindowState != WindowState.Minimized && _page == "sensors");
         if (!IsVisible || WindowState == WindowState.Minimized) return;
         var s = _m.Session;
@@ -159,7 +161,7 @@ public partial class MainWindow : Window
 
         // Camera
         var controls = _m.Camera;
-        var signature = string.Join("|", controls.Lenses);
+        var signature = string.Join("|", controls.Lenses.Select(l => $"{l.CameraId}:{l.Title}:{l.Zoom}"));
         if (_lensSignature != signature)
         {
             _loadingCamera = true; _lensSignature = signature; Lens.ItemsSource = controls.Lenses;

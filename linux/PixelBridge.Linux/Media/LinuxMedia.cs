@@ -131,6 +131,7 @@ sealed class FfmpegVideo : IDisposable
     public void Stop(bool clearOutput = true)
     {
         var device = V4l2Device;
+        V4l2Device = null;
         _signature = null;
         _cts?.Cancel();
         try { if (_ff is { HasExited: false }) _ff.Kill(); } catch { }

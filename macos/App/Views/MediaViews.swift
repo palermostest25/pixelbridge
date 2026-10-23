@@ -1,6 +1,7 @@
 import AppKit
 import CoreAudio
 import Charts
+import Combine
 import CoreImage
 import MapKit
 import PixelBridgeKit
@@ -10,13 +11,21 @@ import SwiftUI
 // MARK: Camera
 
 struct PixelBufferView: NSViewRepresentable {
-    let buffer: CVPixelBuffer?
+    let state: VideoPreviewState
+    final class Coordinator { var subscription: AnyCancellable? }
+    func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NSView {
-        let v = NSView(); v.wantsLayer = true
-        v.layer?.contentsGravity = .resizeAspect; v.layer?.backgroundColor = NSColor.black.cgColor
-        return v
+        let view = NSView(); view.wantsLayer = true
+        view.layer?.contentsGravity = .resizeAspect; view.layer?.backgroundColor = NSColor.black.cgColor
+        // Video changes only this layer; no SwiftUI layout or body invalidation per frame.
+        context.coordinator.subscription = state.$buffer.sink { [weak view] buffer in
+            CATransaction.begin(); CATransaction.setDisableActions(true)
+            view?.layer?.contents = buffer.flatMap { CVPixelBufferGetIOSurface($0)?.takeUnretainedValue() }
+            CATransaction.commit()
+        }
+        return view
     }
-    func updateNSView(_ v: NSView, context: Context) { v.layer?.contents = buffer.map { CVPixelBufferGetIOSurface($0)?.takeUnretainedValue() } ?? nil }
+    func updateNSView(_ view: NSView, context: Context) {}
 }
 
 struct CameraView: View {
@@ -75,7 +84,7 @@ struct CameraView: View {
 
     private var previewView: some View {
             ZStack(alignment: .topLeading) {
-                PixelBufferView(buffer: model.preview)
+                PixelBufferView(state: model.videoPreview)
                     .aspectRatio(16.0 / 9.0, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                 if model.preview == nil {

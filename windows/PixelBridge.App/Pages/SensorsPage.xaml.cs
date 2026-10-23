@@ -129,7 +129,7 @@ public partial class SensorsPage : UserControl, IPage
         _c.Tilt.Enabled = Tilt.IsChecked == true;
     }
 
-    private void Osc_Click(object sender, RoutedEventArgs e) { _c.Settings.OscEnabled = Osc.IsChecked == true; _c.Settings.Save(); }
+    private void Osc_Click(object sender, RoutedEventArgs e) { _c.SetOsc(Osc.IsChecked == true); }
 
     private void CopyApi_Click(object sender, RoutedEventArgs e) { Clipboard.SetText(ApiUrl.Text); MainWindow.Current?.ShowToast("API URL copied."); }
 }

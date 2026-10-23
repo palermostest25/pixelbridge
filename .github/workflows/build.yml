@@ -83,7 +83,12 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg xvfb libice6 libsm6 libfontconfig1
+      - name: Install Linux media and display dependencies
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v Xvfb >/dev/null; then
+            sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+            sudo apt-get -y -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install ffmpeg xvfb libice6 libsm6 libfontconfig1
+          fi
       - run: dotnet test windows/PixelBridge.Tests -c Release --logger trx
       - run: dotnet run --project linux/PixelBridge.MediaSmoke -c Release
       - run: dotnet publish linux/PixelBridge.Linux -c Release -r linux-x64 --self-contained true -o artifacts/linux/app
