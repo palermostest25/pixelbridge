@@ -11,7 +11,7 @@ import android.os.SystemClock
 import dev.pixelbridge.app.transport.Frame
 import org.json.JSONObject
 
-/** ACTION_BATTERY_CHANGED plus a 5 s periodic sample (current draw is not broadcast). */
+/** ACTION_BATTERY_CHANGED plus a 15 s periodic sample (current draw is not broadcast). */
 class BatteryMonitor(private val context: Context, private val sink: (Frame) -> Unit) {
     private val bm = context.getSystemService(BatteryManager::class.java)
     private val handler = Handler(Looper.getMainLooper())
@@ -29,7 +29,7 @@ class BatteryMonitor(private val context: Context, private val sink: (Frame) -> 
     private val tick = object : Runnable {
         override fun run() {
             publish()
-            handler.postDelayed(this, 5000)
+            handler.postDelayed(this, 15000)
         }
     }
 

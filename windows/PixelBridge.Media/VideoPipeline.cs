@@ -18,6 +18,8 @@ public sealed class VideoPipeline : IDisposable
     private readonly Thread _thread;
     private readonly CancellationTokenSource _cts = new();
     private H264Decoder? _decoder;
+    private readonly VideoGeometry _geometry = new();
+    public BridgeSettings Settings { get; set; } = new();
     private bool _waitingForKeyframe = true;
     private long _framesIn, _framesDecoded, _framesDropped, _bytesIn;
     private readonly Stopwatch _rateWatch = Stopwatch.StartNew();
@@ -51,8 +53,8 @@ public sealed class VideoPipeline : IDisposable
 
     private void OnConfig(JsonObject cfg)
     {
+        if (CameraControls.FormatChanged(Config, cfg)) _waitingForKeyframe = true;
         Config = cfg;
-        _waitingForKeyframe = true;
     }
 
     private void OnFrame(Frame f)
@@ -105,6 +107,7 @@ public sealed class VideoPipeline : IDisposable
                 TrackLatency(f.TimestampNs);
                 UpdateRates(f.Payload.Length);
                 if (Paused) return;
+                nv = new Nv12Frame(nv.Width, nv.Height, _geometry.Transform(nv.Data, nv.Width, nv.Height, CameraControls.Rotation(Settings, Config), Settings.PreviewMirror), nv.TimestampNs);
                 Latest = nv;
                 Feed.Write(nv);
                 FrameDecoded?.Invoke(nv);

@@ -2,6 +2,27 @@ import XCTest
 @testable import PixelBridgeKit
 
 final class ProtocolTests: XCTestCase {
+    func testAutomaticPhoneSelection() {
+        let devices = AdbClient.parseDevices("List of devices attached\nphone-1 unauthorized usb:1\nemulator-5554 device model:Emulator\n")
+        guard case .selected(let device) = AdbClient.selectTarget(devices, configuredSerial: "") else {
+            return XCTFail("A single physical phone should be selected even before authorization")
+        }
+        XCTAssertEqual(device.serial, "phone-1")
+        XCTAssertEqual(device.state, "unauthorized")
+        XCTAssertEqual(AdbClient.selectTarget([], configuredSerial: ""), .missing)
+        XCTAssertEqual(AdbClient.selectTarget(Array(devices.suffix(1)), configuredSerial: ""), .missing)
+    }
+
+    func testSelectionNeverFallsBackToAnotherPhone() {
+        let devices = AdbClient.parseDevices("first device model:Pixel_7\nsecond device model:Pixel_7\n")
+        XCTAssertEqual(AdbClient.selectTarget(devices, configuredSerial: ""), .multiple)
+        XCTAssertEqual(AdbClient.selectTarget(devices, configuredSerial: "missing"), .missing)
+        guard case .selected(let device) = AdbClient.selectTarget(devices, configuredSerial: " second ") else {
+            return XCTFail("Configured serial must select the exact phone")
+        }
+        XCTAssertEqual(device.serial, "second")
+    }
+
     func testRoundTrip() throws {
         let f = Frame(type: MsgType.videoFrame, payload: Data([1, 2, 3]), flags: [.keyframe], timestampNs: -5)
         var d = FrameDecoder(maxPayload: 100)

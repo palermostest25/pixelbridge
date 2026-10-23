@@ -17,6 +17,7 @@ public sealed class AppController : IAsyncDisposable
 {
     public BridgeSettings Settings { get; }
     public DeviceSession Session { get; }
+    public UsbSharing UsbSharing { get; }
     public VideoPipeline Video { get; }
     public AudioPipeline Audio { get; } = new();
     public SensorApiServer? Api { get; private set; }
@@ -61,7 +62,9 @@ public sealed class AppController : IAsyncDisposable
         Settings = BridgeSettings.Load();
         if (string.IsNullOrEmpty(Settings.ApiToken)) { Settings.ApiToken = SensorApiServer.NewToken(); Settings.Save(); }
         Session = new DeviceSession(Settings);
-        Video = new VideoPipeline(Session);
+        UsbSharing = new UsbSharing(Session);
+        Session.StateChanged += (s, detail) => { if (s == LinkState.Connected) _ = UsbSharing.RefreshAsync(); };
+        Video = new VideoPipeline(Session) { Settings = Settings };
         Radio = new RadioController(Session);
         Session.Location += OnLocation;
         Audio.Gain = Settings.MicGain;
@@ -83,6 +86,7 @@ public sealed class AppController : IAsyncDisposable
         Session.Start();
         if (Settings.SensorWebSocketEnabled) StartApi();
         if (Settings.OscEnabled) Osc = new OscExporter(Settings.OscPort);
+        Session.SetSensorDemand("osc", Settings.OscEnabled);
         if (Settings.NmeaEnabled) { try { Nmea = new NmeaServer(Settings.NmeaPort); } catch (Exception e) { Log.Warn($"NMEA feed failed: {e.Message}"); } }
         if (Settings.MicOutputDevice != null) Audio.SetCableOutput(Settings.MicOutputDevice);
         StartVirtualCamera();
@@ -93,6 +97,7 @@ public sealed class AppController : IAsyncDisposable
         try
         {
             Api = new SensorApiServer(Settings.SensorWebSocketPort, Settings.ApiToken!, StatusSnapshot);
+            Api.DemandChanged += on => Session.SetSensorDemand("api", on);
             Api.Start();
         }
         catch (Exception e) { Log.Warn($"sensor API failed to start: {e.Message}"); Api = null; }
@@ -133,7 +138,7 @@ public sealed class AppController : IAsyncDisposable
         CameraError = null;
         Video.Paused = false;
         Session.StartStream("video", new { cameraId = Settings.CameraId, width = Settings.VideoWidth, height = Settings.VideoHeight,
-            fps = Settings.VideoFps, bitrate = Settings.VideoBitrate });
+            fps = Settings.SavePower ? Math.Min(15, Settings.VideoFps) : Settings.VideoFps, bitrate = Settings.VideoBitrate, zoomRatio = Settings.CameraZoom, stabilization = Settings.CameraStabilization });
     }
 
     public void StopCamera()
@@ -149,6 +154,10 @@ public sealed class AppController : IAsyncDisposable
         Settings.Save();
         if (CameraRequested) StartCamera();
     }
+
+    public CameraControls Camera => new(Session.Capabilities, Settings);
+    public void UpdateCameraControls() { Settings.Save(); if (CameraRequested) Session.StartStream("video", Camera.UpdateOptions(Settings)); }
+    public void SelectLens(CameraLens lens) { var changed = Settings.CameraId != lens.CameraId; Settings.CameraId = lens.CameraId; Settings.CameraZoom = lens.Zoom; Settings.Save(); if (CameraRequested) { if (changed) StartCamera(); else UpdateCameraControls(); } }
 
     public void StartMic()
     {
@@ -168,6 +177,7 @@ public sealed class AppController : IAsyncDisposable
     public void SetPrivacy(bool on)
     {
         PrivacyMode = on;
+        Session.PauseSensors(on);
         if (on)
         {
             Session.StopStream("video");
@@ -182,7 +192,7 @@ public sealed class AppController : IAsyncDisposable
         }
         else
         {
-            Session.StartStream("sensors", new { rateHz = Settings.SensorRateHz });
+            Session.RefreshSensorDemand();
             if (CameraRequested) StartCamera();
             if (LocationRequested) StartLocation();
             if (MicRequested) StartMic();
@@ -226,7 +236,7 @@ public sealed class AppController : IAsyncDisposable
     {
         Settings.SensorRateHz = hz;
         Settings.Save();
-        if (!PrivacyMode) Session.StartStream("sensors", new { rateHz = hz });
+        Session.RefreshSensorDemand();
     }
 
     // ---------------------------------------------------------------- events
@@ -320,6 +330,7 @@ public sealed class AppController : IAsyncDisposable
             Directory.CreateDirectory(AppPaths.RecordingsDir);
             var path = Path.Combine(AppPaths.RecordingsDir, $"pixel-sensors-{DateTime.Now:yyyyMMdd-HHmmss}.csv");
             _sensorExport = new StreamWriter(path);
+            Session.SetSensorDemand("export", true);
             _sensorExport.WriteLine("device_timestamp_ns,host_timestamp_ns,sensor,accuracy,v0,v1,v2,v3,v4");
             _sensorExportUntil = DateTime.UtcNow.AddSeconds(Math.Clamp(seconds, 1, 600));
             return path;
@@ -328,7 +339,7 @@ public sealed class AppController : IAsyncDisposable
 
     public bool SensorExportActive { get { lock (_exportLock) return _sensorExport != null; } }
     public void StopSensorExport() { lock (_exportLock) StopSensorExportLocked(); }
-    private void StopSensorExportLocked() { _sensorExport?.Dispose(); _sensorExport = null; }
+    private void StopSensorExportLocked() { _sensorExport?.Dispose(); _sensorExport = null; Session.SetSensorDemand("export", false); }
 
     public string StartVideoRecording(int seconds = 60)
     {
@@ -397,14 +408,14 @@ public sealed class AppController : IAsyncDisposable
         var exe = FindScrcpy();
         if (exe is null) { Toast?.Invoke("scrcpy.exe not found; set its path in Settings"); return; }
         var psi = new ProcessStartInfo(exe) { WorkingDirectory = Path.GetDirectoryName(exe)!, UseShellExecute = false };
-        foreach (var a in new[] { "-s", Session.Serial, "--no-audio", "--window-title", virtualDisplay ? "PixelBridge (virtual display)" : "PixelBridge phone" })
+        foreach (var a in new[] { "-s", Session.Serial, "--no-audio", "--force-adb-forward", "--max-size=1280", "--max-fps=15", "--turn-screen-off", "--window-title", virtualDisplay ? "PixelBridge (virtual display)" : "PixelBridge phone" })
             psi.ArgumentList.Add(a);
         if (virtualDisplay)
         {
             psi.ArgumentList.Add("--new-display=1280x800/200");
             psi.ArgumentList.Add($"--start-app={DeviceSession.Package}");
         }
-        Process.Start(psi);
+        try { System.Diagnostics.Process.Start(psi); } catch (Exception e) { Toast?.Invoke("Could not open phone screen: " + e.Message); }
     }
 
     public async ValueTask DisposeAsync()

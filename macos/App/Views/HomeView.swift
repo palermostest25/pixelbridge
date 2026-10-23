@@ -6,15 +6,15 @@ struct HomeView: View {
     @EnvironmentObject var session: DeviceSession
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 24) {
             Card {
                 HStack(spacing: 24) {
-                    RoundedRectangle(cornerRadius: 12).strokeBorder(.secondary, lineWidth: 3)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(.black))
-                        .frame(width: 60, height: 108)
+                    RoundedRectangle(cornerRadius: 14).strokeBorder(.secondary.opacity(0.5), lineWidth: 2)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(BridgeStyle.canvas))
+                        .frame(width: 66, height: 118)
                         .overlay(Image(systemName: session.isConnected ? "checkmark" : "cable.connector").foregroundStyle(session.isConnected ? .green : .secondary))
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(session.deviceProps["ro.product.model"] ?? "Pixel 7").font(.largeTitle.weight(.semibold))
+                        Text(session.deviceProps["ro.product.model"] ?? "Your Pixel").font(.system(size: 28, weight: .semibold, design: .rounded))
                         Text(session.isConnected ? "Connected over USB" : "\(session.state.label) · \(session.detail)").foregroundStyle(.secondary)
                         HStack {
                             if let r = session.deviceProps["ro.build.version.release"] { Chip("Android \(r)") }
@@ -27,6 +27,7 @@ struct HomeView: View {
                         Button(session.isConnected ? "Disconnect" : "Connect") {
                             Task { session.isConnected ? await session.disconnect() : session.retryNow() }
                         }.buttonStyle(.borderedProminent).controlSize(.large)
+                        .disabled(session.state == .connecting)
                         Toggle("Privacy mode", isOn: Binding(get: { model.privacy }, set: { model.setPrivacy($0) })).toggleStyle(.switch)
                     }
                 }
@@ -46,8 +47,12 @@ struct HomeView: View {
                 }
             }
 
-            Text("Features").font(.headline)
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+            HStack {
+                Text("Your workspace").font(.title3.weight(.semibold))
+                Spacer()
+                Text(model.privacy ? "Paused for privacy" : session.isConnected ? "Ready when you are" : "Connect to get started").font(.callout).foregroundStyle(.secondary)
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 265), spacing: 12)], spacing: 12) {
                 Tile(icon: "camera", title: "Camera", state: model.cameraOn ? (model.preview != nil ? "Live · \(Int(model.fps)) fps" : "Starting…") : "Off",
                      active: model.cameraOn, toggle: Binding(get: { model.cameraOn }, set: { $0 ? model.startCamera() : model.stopCamera() }))
                 Tile(icon: "mic", title: "Microphone", state: model.micOn ? "Live" : "Off", active: model.micOn,
@@ -104,15 +109,15 @@ struct Tile: View {
         HStack(spacing: 12) {
             Image(systemName: icon).font(.title3).frame(width: 40, height: 40)
                 .foregroundStyle(active ? .white : .primary)
-                .background(active ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary), in: RoundedRectangle(cornerRadius: 9))
+                .background(active ? AnyShapeStyle(BridgeStyle.accent) : AnyShapeStyle(.quaternary), in: RoundedRectangle(cornerRadius: 9))
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).bold()
+                Text(title).font(.body.weight(.semibold))
                 Text(state).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
-            if let toggle { Toggle("", isOn: toggle).toggleStyle(.switch).labelsHidden() }
+            if let toggle { Toggle("", isOn: toggle).toggleStyle(.switch).labelsHidden().accessibilityLabel(title) }
         }
-        .padding(14)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 12))
+        .padding(18)
+        .background(BridgeStyle.surface, in: RoundedRectangle(cornerRadius: 14))
     }
 }

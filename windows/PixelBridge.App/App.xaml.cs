@@ -9,7 +9,7 @@ public partial class App : Application
 {
     private static Mutex? _singleInstance;
     private Forms.NotifyIcon? _tray;
-    private Forms.ToolStripMenuItem? _trayStatus, _trayPrivacy, _trayMute;
+    private Forms.ToolStripMenuItem? _trayStatus, _trayPrivacy, _trayMute, _traySharing, _trayPower;
     public AppController Controller { get; private set; } = null!;
     private MainWindow? _window;
 
@@ -37,7 +37,7 @@ public partial class App : Application
         {
             var dir = e.Args[ri + 1];
             // Not tied to Loaded: WPF skips its render pass (and Loaded) while the desktop is locked.
-            Dispatcher.BeginInvoke(async () => { await Task.Delay(5000); await _window.RenderAllPagesAsync(dir); });
+            Dispatcher.BeginInvoke(async () => { await Task.Delay(5000); await _window.RenderAllPagesAsync(dir); await QuitAsync(); });
         }
         Controller.Session.StateChanged += (s, _) => Dispatcher.BeginInvoke(UpdateTray);
         Controller.Toast += msg => Dispatcher.BeginInvoke(() => _tray?.ShowBalloonTip(4000, "PixelBridge", msg, Forms.ToolTipIcon.Info));
@@ -57,6 +57,12 @@ public partial class App : Application
         menu.Items.Add("Stop camera", null, (_, _) => Controller.StopCamera());
         _trayMute = new Forms.ToolStripMenuItem("Mic mute", null, (_, _) => { Controller.Audio.Muted = !Controller.Audio.Muted; UpdateTray(); });
         menu.Items.Add(_trayMute);
+        _traySharing = new Forms.ToolStripMenuItem("USB internet sharing", null, async (_, _) => { await Controller.UsbSharing.SetAsync(!Controller.UsbSharing.Enabled); UpdateTray(); });
+        menu.Items.Add(_traySharing);
+        _trayPower = new Forms.ToolStripMenuItem("Save power (15 fps)", null, (_, _) => { Controller.Settings.SavePower = !Controller.Settings.SavePower; Controller.Settings.Save(); if (Controller.CameraRequested) Controller.StartCamera(); UpdateTray(); });
+        menu.Items.Add(_trayPower);
+        menu.Opening += async (_, _) => { await Controller.UsbSharing.RefreshAsync(); UpdateTray(); };
+        Controller.UsbSharing.Changed += () => Dispatcher.BeginInvoke(UpdateTray);
         _trayPrivacy = new Forms.ToolStripMenuItem("Privacy mode (pause all)", null, (_, _) => { Controller.SetPrivacy(!Controller.PrivacyMode); UpdateTray(); });
         menu.Items.Add(_trayPrivacy);
         menu.Items.Add(new Forms.ToolStripSeparator());
@@ -81,6 +87,10 @@ public partial class App : Application
         _tray.Text = ("PixelBridge: " + text)[..Math.Min(63, ("PixelBridge: " + text).Length)];
         _trayPrivacy!.Checked = Controller.PrivacyMode;
         _trayMute!.Checked = Controller.Audio.Muted;
+        _traySharing!.Checked = Controller.UsbSharing.Enabled;
+        _traySharing.Enabled = Controller.Session.IsConnected && !Controller.UsbSharing.Busy;
+        _traySharing.ToolTipText = Controller.UsbSharing.Message;
+        _trayPower!.Checked = Controller.Settings.SavePower;
     }
 
     public void ShowWindow()

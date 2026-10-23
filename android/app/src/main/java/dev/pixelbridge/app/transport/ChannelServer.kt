@@ -135,12 +135,13 @@ class ChannelServer(
         val queue = ArrayBlockingQueue<Frame>(capacity)
         lateinit var writer: FrameWriter
         @Volatile var closed = false
+        private var writerThread: Thread? = null
 
         fun startWriter(name: String) {
-            thread(name = "pb-$name-writer", isDaemon = true) {
+            writerThread = thread(name = "pb-$name-writer", isDaemon = true) {
                 try {
                     while (!closed) {
-                        val f = queue.poll(250, TimeUnit.MILLISECONDS) ?: continue
+                        val f = queue.take()
                         writer.write(f)
                     }
                 } catch (e: Exception) {
@@ -151,6 +152,7 @@ class ChannelServer(
 
         override fun close() {
             closed = true
+            writerThread?.interrupt()
             queue.clear()
             try { socket.close() } catch (_: Exception) {}
         }

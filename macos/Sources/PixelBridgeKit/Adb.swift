@@ -10,6 +10,13 @@ public struct AdbDevice: Sendable, Equatable {
     public var isEmulator: Bool { serial.hasPrefix("emulator-") }
 }
 
+/// Resolve one physical phone without ever picking an arbitrary device.
+public enum AdbTargetSelection: Equatable {
+    case missing
+    case multiple
+    case selected(AdbDevice)
+}
+
 /// adb wrapper. Every device command is qualified with `-s SERIAL`; never uses tcpip or key management.
 public struct AdbClient: Sendable {
     public let path: String
@@ -68,6 +75,16 @@ public struct AdbClient: Sendable {
             let model = parts.first { $0.hasPrefix("model:") }?.dropFirst(6) ?? ""
             return AdbDevice(serial: parts[0], state: parts[1], model: String(model))
         }
+    }
+
+    public static func selectTarget(_ devices: [AdbDevice], configuredSerial: String) -> AdbTargetSelection {
+        let configured = configuredSerial.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !configured.isEmpty {
+            return devices.first { $0.serial == configured }.map(AdbTargetSelection.selected) ?? .missing
+        }
+        let phones = devices.filter { !$0.isEmulator }
+        guard phones.count <= 1 else { return .multiple }
+        return phones.first.map(AdbTargetSelection.selected) ?? .missing
     }
 
     /// `adb forward tcp:0 tcp:DEVICE` lets adb pick a free loopback port; returns it.

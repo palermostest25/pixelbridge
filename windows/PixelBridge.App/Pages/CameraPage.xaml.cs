@@ -18,12 +18,19 @@ public partial class CameraPage : UserControl, IPage
     private int _busy;
     private volatile bool _visible;
     private bool _loading = true;
+    private DispatcherTimer? _zoomTimer;
+    private string _lensSignature = "";
+    private long _lastPreview;
 
     public CameraPage(AppController c)
     {
         _c = c;
         InitializeComponent();
-        (c.Settings.CameraId == "1" ? FrontRadio : RearRadio).IsChecked = true;
+        Stabilization.SelectedIndex = Math.Max(0, Array.IndexOf(new[] { "auto", "optical", "electronic", "off" }, c.Settings.CameraStabilization));
+        Orientation.SelectedIndex = Math.Max(0, Array.IndexOf(new[] { "auto", "0", "90", "180", "270" }, c.Settings.CameraOrientation));
+        SavePower.IsChecked = c.Settings.SavePower;
+        _zoomTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(150), DispatcherPriority.Background, (_, _) => { _zoomTimer!.Stop(); _c.UpdateCameraControls(); }, Dispatcher);
+        _zoomTimer.Stop();
         Resolution.SelectedIndex = c.Settings.VideoWidth >= 1920 ? 1 : 0;
         Bitrate.SelectedIndex = c.Settings.VideoBitrate <= 2_000_000 ? 0 : c.Settings.VideoBitrate >= 8_000_000 ? 2 : 1;
         Mirror.IsChecked = c.Settings.PreviewMirror;
@@ -33,10 +40,11 @@ public partial class CameraPage : UserControl, IPage
 
     private void OnFrame(Nv12Frame f)
     {
-        if (!_visible || Interlocked.Exchange(ref _busy, 1) == 1) return; // drop when the UI is behind
+        if (!_visible || Stopwatch.GetElapsedTime(_lastPreview).TotalMilliseconds < 66 || Interlocked.Exchange(ref _busy, 1) == 1) return; // drop when the UI is behind
+        _lastPreview = Stopwatch.GetTimestamp();
         int stride = f.Width * 4;
         if (_bgra.Length != stride * f.Height) _bgra = new byte[stride * f.Height];
-        f.ToBgra(_bgra, stride, _c.Settings.PreviewMirror);
+        f.ToBgra(_bgra, stride, false);
         Dispatcher.BeginInvoke(() =>
         {
             try
@@ -55,6 +63,18 @@ public partial class CameraPage : UserControl, IPage
     public void Tick()
     {
         _visible = MainWindow.Current?.IsPageVisible(this) == true;
+        var controls = _c.Camera;
+        var signature = string.Join("|", controls.Lenses);
+        if (signature != _lensSignature)
+        {
+            _loading = true; _lensSignature = signature; Lens.ItemsSource = controls.Lenses;
+            Lens.SelectedItem = controls.Lenses.FirstOrDefault(l => l.CameraId == _c.Settings.CameraId && (l.Title == "Ultra wide") == (_c.Settings.CameraZoom < .95)) ?? controls.Lenses.FirstOrDefault();
+            Zoom.Minimum = controls.Current?.MinZoom ?? 1; Zoom.Maximum = controls.Current?.MaxZoom ?? 1; Zoom.Value = _c.Settings.CameraZoom; _loading = false;
+        }
+        ZoomText.Text = $"{_c.Settings.CameraZoom:0.00}×";
+        Optical.IsEnabled = controls.Current?.Optical == true && _c.Settings.CameraZoom >= 1;
+        Electronic.IsEnabled = controls.Current?.Electronic == true;
+        StabilizationState.Text = CameraControls.StabilizationStatus(_c.Video.Config);
         var v = _c.Video;
         bool live = v.IsLive;
         if (!live && _bitmap != null) { Preview.Source = null; _bitmap = null; } // never leave a stale frame on screen
@@ -84,7 +104,26 @@ public partial class CameraPage : UserControl, IPage
 
     private void StartStop_Click(object sender, RoutedEventArgs e) { if (_c.CameraRequested) _c.StopCamera(); else _c.StartCamera(); }
 
-    private void Camera_Click(object sender, RoutedEventArgs e) => _c.SwitchCamera((string)((FrameworkElement)sender).Tag);
+    private void Lens_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || Lens.SelectedItem is not CameraLens lens) return;
+        _c.SelectLens(lens); _loading = true;
+        Zoom.Minimum = _c.Camera.Current?.MinZoom ?? 1; Zoom.Maximum = _c.Camera.Current?.MaxZoom ?? 1; Zoom.Value = _c.Settings.CameraZoom; _loading = false;
+    }
+    private void Zoom_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (_loading) return;
+        _c.Settings.CameraZoom = Zoom.Value; _zoomTimer?.Stop(); _zoomTimer?.Start();
+    }
+    private void Controls_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading) return;
+        _c.Settings.CameraStabilization = (string?)((ComboBoxItem?)Stabilization.SelectedItem)?.Tag ?? "auto";
+        _c.Settings.CameraOrientation = (string?)((ComboBoxItem?)Orientation.SelectedItem)?.Tag ?? "auto";
+        _c.UpdateCameraControls();
+    }
+    private void Power_Click(object sender, RoutedEventArgs e) { _c.Settings.SavePower = SavePower.IsChecked == true; _c.Settings.Save(); if (_c.CameraRequested) _c.StartCamera(); }
+
 
     private void Resolution_Changed(object sender, SelectionChangedEventArgs e)
     {

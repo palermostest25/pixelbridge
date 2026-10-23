@@ -93,7 +93,7 @@
                             <TextBlock Classes="title" Text="Camera" Margin="0"/>
                         </DockPanel>
                         <Border CornerRadius="10" Background="#0B0C0E" ClipToBounds="True">
-                            <Grid Height="400">
+                            <Grid Height="320">
                                 <Image x:Name="Preview" Stretch="Uniform"/>
                                 <TextBlock x:Name="PreviewText" Text="Camera is off" Foreground="#AAFFFFFF" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 <Border x:Name="LiveChip" IsVisible="False" Margin="14" HorizontalAlignment="Left" VerticalAlignment="Top" CornerRadius="12" Padding="10,4" Background="#AA000000">
@@ -101,10 +101,28 @@
                                 </Border>
                             </Grid>
                         </Border>
-                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,12,0,0">
-                            <RadioButton x:Name="Rear" Content="Rear" GroupName="cam" Click="CamSel_Click" Tag="0"/>
-                            <RadioButton x:Name="Front" Content="Front" GroupName="cam" Click="CamSel_Click" Tag="1"/>
-                        </StackPanel>
+                        <Grid ColumnDefinitions="*,24,*" Margin="0,18,0,6">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Lens" FontWeight="SemiBold"/>
+                                <ComboBox x:Name="Lens" HorizontalAlignment="Stretch" SelectionChanged="Lens_Changed" AutomationProperties.Name="Camera lens"/>
+                                <DockPanel Margin="0,8,0,0"><TextBlock Text="Zoom" FontWeight="SemiBold"/><TextBlock x:Name="ZoomText" HorizontalAlignment="Right"/></DockPanel>
+                                <Slider x:Name="Zoom" Minimum="1" Maximum="8" Value="1" AutomationProperties.Name="Camera zoom"/>
+                                <ToggleSwitch x:Name="Mirror" Content="Mirror preview and webcam" Click="CameraControls_Click"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Spacing="8">
+                                <TextBlock Text="Stabilization" FontWeight="SemiBold"/>
+                                <ComboBox x:Name="Stabilization" HorizontalAlignment="Stretch" SelectionChanged="CameraControls_Changed">
+                                    <ComboBoxItem Content="Automatic" Tag="auto"/><ComboBoxItem x:Name="Optical" Content="Optical (OIS)" Tag="optical"/>
+                                    <ComboBoxItem x:Name="Electronic" Content="Electronic" Tag="electronic"/><ComboBoxItem Content="Off" Tag="off"/>
+                                </ComboBox>
+                                <TextBlock x:Name="StabilizationState" Classes="secondary"/>
+                                <ComboBox x:Name="Orientation" HorizontalAlignment="Stretch" SelectionChanged="CameraControls_Changed">
+                                    <ComboBoxItem Content="Automatic orientation" Tag="auto"/><ComboBoxItem Content="Landscape" Tag="0"/>
+                                    <ComboBoxItem Content="Rotate right" Tag="90"/><ComboBoxItem Content="Upside down" Tag="180"/><ComboBoxItem Content="Rotate left" Tag="270"/>
+                                </ComboBox>
+                                <ToggleSwitch x:Name="SavePower" Content="Save power · 15 fps" Click="Power_Click"/>
+                            </StackPanel>
+                        </Grid>
                         <Border Classes="card" Margin="0,12,0,0">
                             <StackPanel Spacing="6">
                                 <TextBlock Text="Linux webcam (v4l2loopback)" FontWeight="SemiBold"/>

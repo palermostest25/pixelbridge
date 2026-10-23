@@ -134,6 +134,7 @@ class BridgeService : Service() {
     private val controlListener = object : ChannelServer.Listener {
         override fun onConnected(channel: ChannelServer) {
             lastHeartbeatMs = SystemClock.elapsedRealtime()
+            battery.start()
             channel.send(Frame.json(Frame.CAPABILITIES, capabilities().toString()))
             publishStatus()
             notifyUi()
@@ -176,7 +177,6 @@ class BridgeService : Service() {
         when (kind) {
             "sensors" -> {
                 sensors.start(o.optInt("rateHz", 50))
-                battery.start()
                 controlEvent(Frame.STREAM_STARTED, JSONObject().put("kind", "sensors").put("rateHz", o.optInt("rateHz", 50)))
             }
             "video" -> {
@@ -186,8 +186,10 @@ class BridgeService : Service() {
                     controlEvent(Frame.STREAM_ERROR, JSONObject().put("kind", "video").put("code", "permission")
                         .put("message", "Grant camera permission in the PixelBridge app")); return
                 }
-                camera.start(o.optString("cameraId", "0"), o.optInt("width", 1280), o.optInt("height", 720),
-                    o.optInt("fps", 30), o.optInt("bitrate", 4_000_000))
+                if (o.optBoolean("updateOnly", false)) camera.updateControls(o)
+                else camera.start(o.optString("cameraId", "0"), o.optInt("width", 1280), o.optInt("height", 720),
+                    o.optInt("fps", 30), o.optInt("bitrate", 4_000_000),
+                    o.optDouble("zoomRatio", 1.0).toFloat(), o.optString("stabilization", "auto"))
             }
             "audio" -> mic.start(o.optInt("rateHz", 48000))
             "location" -> {
@@ -203,7 +205,7 @@ class BridgeService : Service() {
 
     private fun handleStop(kind: String) {
         when (kind) {
-            "sensors" -> { sensors.stop(); battery.stop(); controlEvent(Frame.STREAM_STOPPED, JSONObject().put("kind", "sensors").put("reason", "host")) }
+            "sensors" -> { sensors.stop(); controlEvent(Frame.STREAM_STOPPED, JSONObject().put("kind", "sensors").put("reason", "host")) }
             "video" -> camera.stop("host")
             "audio" -> mic.stop("host")
             "location" -> { location.stop(); controlEvent(Frame.STREAM_STOPPED, JSONObject().put("kind", "location").put("reason", "host")) }
@@ -265,7 +267,7 @@ class BridgeService : Service() {
 
     private fun pauseAll() {
         paused = true
-        camera.stop("paused"); mic.stop("paused"); location.stop()
+        camera.stop("paused"); mic.stop("paused"); sensors.stop(); location.stop()
         publishStatus()
     }
 

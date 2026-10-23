@@ -37,7 +37,7 @@ public struct BridgeSettings: Codable, Sendable {
 @MainActor
 public final class DeviceSession: ObservableObject {
     public static let package = "dev.pixelbridge.app"
-    public static let expectedAppVersion = "0.2.1"
+    public static let expectedAppVersion = "0.3.0"
     private static let approved: Set<String> = ["panther"]
     private static let channelPorts: [(String, Int)] = [("control", 27183), ("video", 27184), ("audio", 27185), ("telemetry", 27186)]
 
@@ -76,7 +76,8 @@ public final class DeviceSession: ObservableObject {
     public let radioEvent = PassthroughSubject<[String: Any], Never>()
     public let notification = PassthroughSubject<[String: Any], Never>()
 
-    public var serial: String { settings.targetSerial }
+    private var discoveredSerial = ""
+    public var serial: String { discoveredSerial.isEmpty ? settings.targetSerial.trimmingCharacters(in: .whitespacesAndNewlines) : discoveredSerial }
     public var isConnected: Bool { state == .connected }
     public var pairedAt: Date? { pairing.pairedAt(serial: serial) }
 
@@ -92,6 +93,7 @@ public final class DeviceSession: ObservableObject {
     }
 
     private func set(_ s: LinkState, _ d: String = "") {
+        guard state != s || detail != d else { return }
         state = s; detail = d
         Log.info("link state \(s.rawValue)\(d.isEmpty ? "" : ": \(d)")")
     }
@@ -104,10 +106,31 @@ public final class DeviceSession: ObservableObject {
             return
         }
         guard let adb else { return }
-        let devices = await adb.devices()
-        otherDevices = devices.filter { $0.serial != serial }
-        guard let target = devices.first(where: { $0.serial == serial }) else {
-            set(.disconnected, "Pixel not detected on USB"); backoff = 2; nextAttempt = .distantPast; return
+        let discovery = await adb.run(["devices", "-l"], timeout: 10)
+        guard discovery.ok else {
+            set(.error, "USB discovery failed: \(discovery.stderr.isEmpty ? discovery.stdout : discovery.stderr)")
+            return
+        }
+        let devices = AdbClient.parseDevices(discovery.stdout)
+        let target: AdbDevice
+        switch AdbClient.selectTarget(devices, configuredSerial: settings.targetSerial) {
+        case .missing:
+            discoveredSerial = ""
+            otherDevices = devices
+            set(.disconnected, settings.targetSerial.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                ? "No Android phone detected. Connect a USB data cable and enable USB debugging on the phone."
+                : "The selected phone is not connected. Check its USB cable or clear Phone serial in Settings to detect automatically.")
+            backoff = 2; nextAttempt = .distantPast
+            return
+        case .multiple:
+            discoveredSerial = ""
+            otherDevices = devices
+            set(.wrongDevice, "More than one phone is connected. Set Phone serial in Settings, or disconnect the other phones.")
+            return
+        case .selected(let device):
+            target = device
+            discoveredSerial = device.serial
+            otherDevices = devices.filter { $0.serial != device.serial }
         }
         switch target.state {
         case "device": break
@@ -174,7 +197,6 @@ public final class DeviceSession: ObservableObject {
                     try? await Task.sleep(nanoseconds: 1_000_000_000)
                 }
             }
-            startStream("sensors", ["rateHz": settings.sensorRateHz])
         } catch let e as AuthError {
             await cleanup()
             needsUser(.notPaired, e.description)
@@ -252,7 +274,7 @@ public final class DeviceSession: ObservableObject {
 
     /// One-time pairing through the authorised ADB transport (section 3).
     public func pair() async -> Bool {
-        guard let adb, let key = try? pairing.createAndSave(serial: serial) else { return false }
+        guard let adb, !serial.isEmpty, let key = try? pairing.createAndSave(serial: serial) else { return false }
         let b64url = key.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
         let host = (Host.current().localizedName ?? "Mac").filter { $0.isLetter || $0.isNumber }
         let r = await adb.run(["-s", serial, "shell", "am", "start", "-n", "\(Self.package)/.PairActivity", "--es", "key", b64url, "--es", "host", host], timeout: 15)
@@ -266,7 +288,7 @@ public final class DeviceSession: ObservableObject {
     public func unpair() { pairing.delete(serial: serial) }
 
     public func install(apk: URL) async -> AdbResult? {
-        guard let adb else { return nil }
+        guard let adb, !serial.isEmpty else { return nil }
         let r = await adb.run(["-s", serial, "install", "-r", apk.path], timeout: 180)
         nextAttempt = .distantPast
         if r.ok { set(.disconnected, "installed; reconnecting") }

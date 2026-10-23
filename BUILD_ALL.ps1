@@ -4,7 +4,7 @@
   No device or system changes. Outputs to artifacts\.
 .PARAMETER SkipAndroid / SkipNative / SkipTests  Skip a stage.
 #>
-param([switch]$SkipAndroid, [switch]$SkipNative, [switch]$SkipTests)
+param([switch]$SkipAndroid, [switch]$SkipNative, [switch]$SkipTests, [string]$PlatformToolset = "v143")
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $art = Join-Path $root 'artifacts'
@@ -40,7 +40,7 @@ if (-not $SkipNative) {
     Step 'Native DLLs (decoder, virtual camera)'
     if (-not $msbuild) { throw 'Visual Studio with the C++ workload is required for the native DLLs' }
     foreach ($p in 'PixelBridge.Native', 'PixelBridge.VirtualCam', 'PixelBridge.VCamTest') {
-        & $msbuild "$root\windows\$p\$p.vcxproj" /p:Configuration=Release /p:Platform=x64 /nologo /v:m
+        & $msbuild "$root\windows\$p\$p.vcxproj" /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=$PlatformToolset /nologo /v:m
         if ($LASTEXITCODE -ne 0) { throw "$p build failed" }
     }
 }

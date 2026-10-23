@@ -23,8 +23,10 @@ static class Tools
             var psi = new ProcessStartInfo(file) { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
             foreach (var a in args) psi.ArgumentList.Add(a);
             using var p = Process.Start(psi)!;
-            var o = await p.StandardOutput.ReadToEndAsync();
-            var e = await p.StandardError.ReadToEndAsync();
+            var stdout = p.StandardOutput.ReadToEndAsync();
+            var stderr = p.StandardError.ReadToEndAsync();
+            var o = await stdout;
+            var e = await stderr;
             await p.WaitForExitAsync();
             return (p.ExitCode, o + e);
         }
@@ -42,6 +44,9 @@ sealed class FfmpegVideo : IDisposable
     private Channel<byte[]>? _input;
     private CancellationTokenSource? _cts;
     private bool _waitKey = true;
+    private byte[]? _codecConfig;
+    private string? _signature;
+    public event Action? RequestKeyframe;
     public int PreviewWidth { get; private set; } = 640;
     public int PreviewHeight { get; private set; } = 360;
     public string? V4l2Device { get; private set; }
@@ -63,22 +68,28 @@ sealed class FfmpegVideo : IDisposable
         return null;
     }
 
-    public void Start(int width, int height, bool toLoopback)
+    public void Start(int width, int height, bool toLoopback, int rotation = 0, bool mirror = false)
     {
-        Stop();
+        var device = toLoopback ? FindLoopback() : null;
+        var signature = $"{width}:{height}:{device}:{rotation}:{mirror}";
+        if (_signature == signature && _ff is { HasExited: false }) return;
+        Stop(false);
+        _signature = signature;
         PreviewWidth = 640;
         PreviewHeight = Math.Max(2, (int)Math.Round(640.0 * height / Math.Max(1, width) / 2) * 2);
-        V4l2Device = toLoopback ? FindLoopback() : null;
+        V4l2Device = device;
+        var rotate = rotation switch { 90 => "transpose=clock,", 180 => "hflip,vflip,", 270 => "transpose=cclock,", _ => "" };
+        var geometry = rotate + (mirror ? "hflip," : "") + $"scale={width}:{height}:force_original_aspect_ratio=decrease:force_divisible_by=2,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1";
         var psi = new ProcessStartInfo("ffmpeg") { RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false };
         foreach (var a in new[] { "-hide_banner", "-loglevel", "error", "-fflags", "nobuffer", "-flags", "low_delay", "-probesize", "32",
                      "-analyzeduration", "0", "-f", "h264", "-i", "pipe:0",
-                     "-map", "0:v", "-vf", $"scale={PreviewWidth}:{PreviewHeight}", "-pix_fmt", "bgra", "-f", "rawvideo", "pipe:1" })
+                     "-map", "0:v", "-vf", geometry + $",fps=15,scale={PreviewWidth}:{PreviewHeight}", "-pix_fmt", "bgra", "-f", "rawvideo", "pipe:1" })
             psi.ArgumentList.Add(a);
         if (V4l2Device != null)
-            foreach (var a in new[] { "-map", "0:v", "-pix_fmt", "yuv420p", "-f", "v4l2", V4l2Device }) psi.ArgumentList.Add(a);
+            foreach (var a in new[] { "-map", "0:v", "-vf", geometry, "-pix_fmt", "yuv420p", "-f", "v4l2", V4l2Device }) psi.ArgumentList.Add(a);
         _ff = Process.Start(psi)!;
         _cts = new CancellationTokenSource();
-        _input = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(8) { FullMode = BoundedChannelFullMode.DropWrite });
+        _input = Channel.CreateBounded<byte[]>(new BoundedChannelOptions(8) { FullMode = BoundedChannelFullMode.Wait });
         _waitKey = true;
         var ff = _ff; var input = _input; var ct = _cts.Token;
         _ = Task.Run(async () =>
@@ -103,22 +114,31 @@ sealed class FfmpegVideo : IDisposable
             catch { }
         });
         _ = Task.Run(async () => { var err = await ff.StandardError.ReadToEndAsync(); if (err.Length > 0) Log.Warn("ffmpeg: " + err.Trim()); });
+        if (_codecConfig != null) _input.Writer.TryWrite(_codecConfig);
+        RequestKeyframe?.Invoke();
         Log.Info($"ffmpeg video pipeline started{(V4l2Device != null ? " → " + V4l2Device : "")}");
     }
 
     public void Feed(byte[] accessUnit, bool keyframe, bool config)
     {
+        if (config) _codecConfig = accessUnit;
         if (_input is null) return;
         if (_waitKey && !keyframe && !config) return;
         if (keyframe) _waitKey = false;
-        if (!_input.Writer.TryWrite(accessUnit)) _waitKey = true; // backlog: resync on the next keyframe
+        if (!_input.Writer.TryWrite(accessUnit)) { _waitKey = true; RequestKeyframe?.Invoke(); } // backlog: resync on the next keyframe
     }
 
-    public void Stop()
+    public void Stop(bool clearOutput = true)
     {
+        var device = V4l2Device;
+        _signature = null;
         _cts?.Cancel();
         try { if (_ff is { HasExited: false }) _ff.Kill(); } catch { }
+        try { _ff?.WaitForExit(1000); } catch { }
         _ff?.Dispose(); _ff = null; _input = null;
+        _cts?.Dispose(); _cts = null;
+        if (clearOutput && device != null)
+            _ = Tools.RunAsync("ffmpeg", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=black:s=1280x720", "-frames:v", "1", "-pix_fmt", "yuv420p", "-f", "v4l2", device);
         LastFrameUtc = DateTime.MinValue;
     }
 
@@ -151,7 +171,8 @@ sealed class PulseMic : IDisposable
         _modules.Add(sink.Trim());
         var (c2, src) = await Tools.RunAsync("pactl", "load-module", "module-remap-source", "master=pixelbridge_sink.monitor",
             "source_name=pixelbridge_mic", "source_properties=device.description=PixelBridge-Microphone");
-        if (c2 == 0) _modules.Add(src.Trim());
+        if (c2 != 0) { await DisableAsync(); return "Could not create the virtual microphone: " + src.Trim(); }
+        _modules.Add(src.Trim());
         var psi = new ProcessStartInfo("pacat") { RedirectStandardInput = true, UseShellExecute = false };
         foreach (var a in new[] { "--playback", "--device=pixelbridge_sink", "--format=s16le", "--rate=48000", "--channels=1", "--latency-msec=60", "--client-name=PixelBridge" })
             psi.ArgumentList.Add(a);

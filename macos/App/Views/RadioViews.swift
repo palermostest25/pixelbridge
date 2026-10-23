@@ -28,6 +28,10 @@ struct NetworkView: View {
             SettingRow(icon: "gearshape", title: "Tethering and hotspot settings on the phone", subtitle: "Opens Android's Hotspot & tethering screen") {
                 Button("Open") { Task { _ = await session.adb?.shell(session.serial, "am start -n com.android.settings/.Settings\\$TetherSettingsActivity") } }
             }
+            SettingRow(icon: "cable.connector", title: "USB internet sharing", subtitle: model.tetherMessage.isEmpty ? "The USB connection may reconnect briefly when switching." : model.tetherMessage) {
+                Toggle("USB internet sharing", isOn: Binding(get: { model.usbSharingEnabled }, set: { model.setInternetSharing($0) }))
+                    .labelsHidden().toggleStyle(.switch).disabled(model.tetherBusy || session.serial.isEmpty)
+            }
             Text("Wi-Fi").font(.headline).padding(.top, 8)
             SettingRow(icon: "wifi", title: (model.wifi["ssid"] as? String) ?? ((model.wifi["connected"] as? Bool) == true ? "Connected" : "—"),
                        subtitle: (model.wifi["rssi"] as? Int).map { "\($0) dBm · \(model.wifi["linkMbps"] as? Int ?? 0) Mbps link" }) {
@@ -153,13 +157,15 @@ struct NotificationsView: View {
 }
 
 struct PhoneView: View {
+    @EnvironmentObject var model: AppModel
     @EnvironmentObject var session: DeviceSession
     @State private var importing = false
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SettingRow(icon: "iphone", title: "Show the phone screen", subtitle: "Needs scrcpy (brew install scrcpy). Use it to answer Android permission prompts, since the phone's display doesn't work.") {
-                Button("Open") { launchScrcpy() }.buttonStyle(.borderedProminent)
+            SettingRow(icon: "iphone", title: "Show the phone screen", subtitle: "Open a live, interactive view of the phone on your Mac.") {
+                Button("Open phone screen") { model.openPhoneScreen() }.buttonStyle(.borderedProminent).disabled(!session.isConnected)
             }
+            if !model.phoneScreenStatus.isEmpty { Text(model.phoneScreenStatus).font(.callout).foregroundStyle(.secondary).textSelection(.enabled) }
             SettingRow(icon: "arrow.up.forward.app", title: "Bring the phone app to the front", subtitle: "Needed after a phone restart before the camera or microphone can start") {
                 Button("Bring to front") { Task { _ = await session.adb?.shell(session.serial, "am start -n \(DeviceSession.package)/.MainActivity") } }
             }
@@ -175,12 +181,7 @@ struct PhoneView: View {
         }
     }
 
-    private func launchScrcpy() {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: ["/opt/homebrew/bin/scrcpy", "/usr/local/bin/scrcpy"].first { FileManager.default.isExecutableFile(atPath: $0) } ?? "/opt/homebrew/bin/scrcpy")
-        p.arguments = ["-s", session.serial, "--no-audio", "--window-title", "PixelBridge phone"]
-        try? p.run()
-    }
+
 }
 
 struct SettingsView: View {

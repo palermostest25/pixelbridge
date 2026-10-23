@@ -11,6 +11,7 @@ public sealed class AppModel : IAsyncDisposable
 {
     public BridgeSettings Settings { get; } = BridgeSettings.Load();
     public DeviceSession Session { get; }
+    public UsbSharing UsbSharing { get; }
     internal FfmpegVideo Video { get; } = new();
     internal PulseMic Mic { get; } = new();
     public SensorApiServer? Api { get; private set; }
@@ -32,6 +33,7 @@ public sealed class AppModel : IAsyncDisposable
     public bool Scanning { get; private set; }
     public string RadioStatus { get; private set; } = "";
     private JsonObject? _videoConfig;
+    public JsonObject? VideoConfig => _videoConfig;
 
     public event Action<SensorSample>? SensorReceived;
     public event Action<string>? Toast;
@@ -40,6 +42,8 @@ public sealed class AppModel : IAsyncDisposable
     {
         if (string.IsNullOrEmpty(Settings.ApiToken)) { Settings.ApiToken = SensorApiServer.NewToken(); Settings.Save(); }
         Session = new DeviceSession(Settings);
+        UsbSharing = new UsbSharing(Session);
+        Session.StateChanged += (s, detail) => { if (s == LinkState.Connected) _ = UsbSharing.RefreshAsync(); };
         Session.Sensor += s =>
         {
             if (Privacy) return;
@@ -50,10 +54,11 @@ public sealed class AppModel : IAsyncDisposable
         };
         Session.Battery += b => Battery = b;
         Session.Location += f => { if (!Privacy) { Location = f; LastLocationUtc = DateTime.UtcNow; } };
+        Video.RequestKeyframe += () => Session.RequestIdr();
         Session.VideoConfig += c =>
         {
             _videoConfig = c;
-            if (CameraOn) Video.Start((int?)c["width"] ?? 1280, (int?)c["height"] ?? 720, toLoopback: true);
+            if (CameraOn) Video.Start((int?)c["width"] ?? 1280, (int?)c["height"] ?? 720, toLoopback: true, CameraControls.Rotation(Settings, c), Settings.PreviewMirror);
         };
         Session.VideoFrame += f => Video.Feed(f.Payload, f.Flags.HasFlag(FrameFlags.Keyframe), f.Flags.HasFlag(FrameFlags.CodecConfig));
         Session.AudioFrame += f => Mic.Push(f.Payload);
@@ -84,7 +89,7 @@ public sealed class AppModel : IAsyncDisposable
         Session.Start();
         if (Settings.SensorWebSocketEnabled)
         {
-            try { Api = new SensorApiServer(Settings.SensorWebSocketPort, Settings.ApiToken!, () => new { link = Session.State.ToString(), battery = Battery }); Api.Start(); }
+            try { Api = new SensorApiServer(Settings.SensorWebSocketPort, Settings.ApiToken!, () => new { link = Session.State.ToString(), battery = Battery }); Api.DemandChanged += on => Session.SetSensorDemand("api", on); Api.Start(); }
             catch (Exception e) { Log.Warn($"sensor API: {e.Message}"); }
         }
     }
@@ -94,18 +99,23 @@ public sealed class AppModel : IAsyncDisposable
         if (Privacy) return;
         if (!FfmpegVideo.Available) { CameraError = "ffmpeg is not installed (sudo apt install ffmpeg)"; return; }
         CameraOn = true; CameraError = null;
-        Session.StartStream("video", new { cameraId = Settings.CameraId, width = Settings.VideoWidth, height = Settings.VideoHeight, fps = Settings.VideoFps, bitrate = Settings.VideoBitrate });
+        Session.StartStream("video", new { cameraId = Settings.CameraId, width = Settings.VideoWidth, height = Settings.VideoHeight, fps = Settings.SavePower ? Math.Min(15, Settings.VideoFps) : Settings.VideoFps, bitrate = Settings.VideoBitrate, zoomRatio = Settings.CameraZoom, stabilization = Settings.CameraStabilization });
     }
 
     public void StopCamera() { CameraOn = false; Session.StopStream("video"); Video.Stop(); }
 
     public void SwitchCamera(string id) { Settings.CameraId = id; Settings.Save(); if (CameraOn) StartCamera(); }
 
+    public CameraControls Camera => new(Session.Capabilities, Settings);
+    public void UpdateCameraControls() { Settings.Save(); if (CameraOn && _videoConfig != null) Video.Start((int?)_videoConfig["width"] ?? 1280, (int?)_videoConfig["height"] ?? 720, true, CameraControls.Rotation(Settings, _videoConfig), Settings.PreviewMirror); if (CameraOn) Session.StartStream("video", Camera.UpdateOptions(Settings)); }
+    public void SelectLens(CameraLens lens) { var changed = Settings.CameraId != lens.CameraId; Settings.CameraId = lens.CameraId; Settings.CameraZoom = lens.Zoom; Settings.Save(); if (CameraOn) { if (changed) StartCamera(); else UpdateCameraControls(); } }
+
     public async Task StartMicAsync()
     {
         if (Privacy) return;
         MicOn = true;
         MicError = await Mic.EnableAsync();
+        if (MicError != null) { MicOn = false; Toast?.Invoke(MicError); return; }
         Session.StartStream("audio", new { rateHz = 48000 });
     }
 
@@ -117,10 +127,11 @@ public sealed class AppModel : IAsyncDisposable
     public void SetPrivacy(bool on)
     {
         Privacy = on;
+        Session.PauseSensors(on);
         if (on) { foreach (var k in new[] { "video", "audio", "sensors", "location" }) Session.StopStream(k); Video.Stop(); Location = null; }
         else
         {
-            Session.StartStream("sensors", new { rateHz = Settings.SensorRateHz });
+            Session.RefreshSensorDemand();
             if (CameraOn) StartCamera(); if (MicOn) _ = StartMicAsync(); if (LocationOn) StartLocation();
         }
     }
@@ -167,8 +178,8 @@ public sealed class AppModel : IAsyncDisposable
         var exe = PixelBridge.Core.Adb.AdbClient.LocateScrcpy(Settings.ScrcpyPath);
         if (exe is null) { Toast?.Invoke("scrcpy not found (sudo apt install scrcpy)"); return; }
         var psi = new System.Diagnostics.ProcessStartInfo(exe) { UseShellExecute = false };
-        foreach (var a in new[] { "-s", Session.Serial, "--no-audio", "--window-title", "PixelBridge phone" }) psi.ArgumentList.Add(a);
-        System.Diagnostics.Process.Start(psi);
+        foreach (var a in new[] { "-s", Session.Serial, "--no-audio", "--force-adb-forward", "--max-size=1280", "--max-fps=15", "--turn-screen-off", "--window-title", "PixelBridge phone" }) psi.ArgumentList.Add(a);
+        try { System.Diagnostics.Process.Start(psi); } catch (Exception e) { Toast?.Invoke("Could not open phone screen: " + e.Message); }
     }
 
     public async ValueTask DisposeAsync()

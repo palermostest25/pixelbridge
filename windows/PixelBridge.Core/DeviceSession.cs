@@ -34,6 +34,10 @@ public sealed class BridgeSettings
     public bool AutoConnect { get; set; } = true;
     public int SensorRateHz { get; set; } = 50;
     public string CameraId { get; set; } = "0";
+    public double CameraZoom { get; set; } = 1;
+    public string CameraStabilization { get; set; } = "auto";
+    public string CameraOrientation { get; set; } = "auto";
+    public bool SavePower { get; set; } = true;
     public int VideoWidth { get; set; } = 1280;
     public int VideoHeight { get; set; } = 720;
     public int VideoFps { get; set; } = 30;
@@ -82,7 +86,7 @@ public sealed class BridgeSettings
 public sealed class DeviceSession : IAsyncDisposable
 {
     public const string Package = "dev.pixelbridge.app";
-    public const string ExpectedAppVersion = "0.2.1";
+    public const string ExpectedAppVersion = "0.3.0";
     private static readonly (string name, int port)[] Channels = [("control", 27183), ("video", 27184), ("audio", 27185), ("telemetry", 27186)];
 
     private readonly BridgeSettings _settings;
@@ -277,7 +281,7 @@ public sealed class DeviceSession : IAsyncDisposable
             SetState(LinkState.Connected, $"{DeviceProps["ro.product.model"]} · Android {DeviceProps["ro.build.version.release"]}");
             foreach (var c in _channels.Values) c.StartReading();
             _ = HeartbeatLoopAsync(_linkCts.Token);
-            StartStream("sensors", new { rateHz = _settings.SensorRateHz });
+            RefreshSensorDemand();
         }
         catch (AuthException e)
         {
@@ -403,6 +407,22 @@ public sealed class DeviceSession : IAsyncDisposable
             if (_channels.TryGetValue("control", out var c))
                 c.TrySend(Frame.Json(MsgType.Heartbeat, JsonSerializer.Serialize(new { hostNs = HostClock.NowNs() })));
             try { await Task.Delay(1000, ct).ConfigureAwait(false); } catch (OperationCanceledException) { break; }
+        }
+    }
+
+    private readonly HashSet<string> _sensorUsers = new();
+    private bool _sensorsPaused;
+    public void SetSensorDemand(string owner, bool enabled)
+    {
+        lock (_sensorUsers) { var changed = enabled ? _sensorUsers.Add(owner) : _sensorUsers.Remove(owner); if (changed) RefreshSensorDemand(); }
+    }
+    public void PauseSensors(bool paused) { lock (_sensorUsers) { _sensorsPaused = paused; RefreshSensorDemand(); } }
+    public void RefreshSensorDemand()
+    {
+        lock (_sensorUsers)
+        {
+            if (_sensorUsers.Count > 0 && !_sensorsPaused) StartStream("sensors", new { rateHz = _settings.SensorRateHz });
+            else StopStream("sensors");
         }
     }
 

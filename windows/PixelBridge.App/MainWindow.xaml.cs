@@ -97,6 +97,9 @@ public partial class MainWindow : Window
 
     private void Tick()
     {
+        _c.Session.SetSensorDemand("page", IsVisible && WindowState != WindowState.Minimized && PageHost.Content is SensorsPage);
+        _c.Session.SetSensorDemand("tilt", _c.Tilt.Enabled);
+        if (!IsVisible || WindowState == WindowState.Minimized) return;
         var s = _c.Session;
         bool connected = s.IsConnected;
         NavStatusDot.Fill = connected ? (Brush)FindResource("SystemFillColorSuccessBrush")

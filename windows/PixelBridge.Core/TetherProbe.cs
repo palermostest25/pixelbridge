@@ -64,7 +64,8 @@ public static class TetherProbe
         string? funcs = null, ncmIp = null; bool persistent = false;
         if (s.Adb != null && s.IsConnected)
         {
-            funcs = (await s.Adb.ShellAsync(s.Serial, "svc usb getFunctions", TimeSpan.FromSeconds(5)).ConfigureAwait(false)).StdOut.Trim();
+            var functions = await s.Adb.ShellAsync(s.Serial, "svc usb getFunctions", TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            funcs = (functions.StdOut + functions.StdErr).Trim();
             var a = (await s.Adb.ShellAsync(s.Serial, "ip -4 -o addr show ncm0", TimeSpan.FromSeconds(5)).ConfigureAwait(false)).StdOut;
             ncmIp = Regex.Match(a, @"inet (\d+\.\d+\.\d+\.\d+)").Groups[1].Value is { Length: > 0 } v ? v : null;
             var u = (await s.Adb.ShellAsync(s.Serial, "dumpsys usb | grep -o 'screen_unlocked_functions=[A-Za-z_,]*'", TimeSpan.FromSeconds(5)).ConfigureAwait(false)).StdOut;

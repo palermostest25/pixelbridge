@@ -1,4 +1,5 @@
 import AppKit
+import CoreAudio
 import Charts
 import CoreImage
 import MapKit
@@ -21,36 +22,147 @@ struct PixelBufferView: NSViewRepresentable {
 struct CameraView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var session: DeviceSession
-    @State private var camera = "0"
+    private var zoomLabel: String { String(format: "%.1f×", model.zoomRatio) }
+    private var canOperate: Bool { session.isConnected && !model.privacy }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Picker("", selection: $camera) { Text("Rear").tag("0"); Text("Front").tag("1") }
-                    .pickerStyle(.segmented).frame(width: 180).labelsHidden()
-                    .onChange(of: camera) { _, v in model.switchCamera(v) }
-                Spacer()
+        VStack(alignment: .leading, spacing: 24) {
+            HStack(spacing: 10) {
+                HStack(spacing: 4) {
+                    ForEach(model.cameraLenses) { lens in
+                        Button { model.selectCameraLens(lens) } label: {
+                            VStack(spacing: 5) {
+                                Image(systemName: lens.symbol).font(.system(size: 19, weight: .medium))
+                                Text(lens.title).font(.caption.weight(.semibold))
+                            }
+                            .frame(minWidth: 76, minHeight: 53)
+                            .foregroundStyle(model.selectedLensID == lens.id ? BridgeStyle.accent : .secondary)
+                            .background(model.selectedLensID == lens.id ? BridgeStyle.accent.opacity(0.13) : .clear, in: RoundedRectangle(cornerRadius: 10))
+                            .contentShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(lens.title + " camera")
+                        .accessibilityAddTraits(model.selectedLensID == lens.id ? .isSelected : [])
+                    }
+                }
+                .disabled(!canOperate)
+                Spacer(minLength: 8)
                 Button { model.cameraOn ? model.stopCamera() : model.startCamera() } label: {
                     Label(model.cameraOn ? "Stop camera" : "Start camera", systemImage: model.cameraOn ? "stop.fill" : "play.fill")
-                }.buttonStyle(.borderedProminent).disabled(!session.isConnected || model.privacy)
+                }
+                .buttonStyle(.borderedProminent).controlSize(.large).disabled(!canOperate)
             }
-            ZStack(alignment: .topLeading) {
-                PixelBufferView(buffer: model.preview).aspectRatio(16 / 9, contentMode: .fit)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                if model.preview == nil {
-                    VStack(spacing: 10) {
-                        Image(systemName: "camera").font(.system(size: 36))
-                        Text(model.privacy ? "Privacy mode is on" : model.cameraError ?? (model.cameraOn ? "Starting camera…" : "Camera is off"))
-                    }.foregroundStyle(.white.opacity(0.7)).frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 24) {
+                    previewView.frame(minWidth: 360, maxWidth: .infinity)
+                    VStack(alignment: .leading, spacing: 20) { zoomControls; captureControls }.frame(width: 250)
+                }
+                VStack(alignment: .leading, spacing: 20) { previewView; zoomControls; captureControls }
+            }
+            Toggle("Save power · 15 fps capture", isOn: $model.savePower).toggleStyle(.switch)
+            SettingRow(icon: "video", title: "macOS webcam", subtitle: model.webcamName.map {
+                "Choose “\($0)” in your calling app. \(model.webcamStatus)"
+            } ?? model.webcamStatus) {
+                if model.canInstallCameraExtension {
+                    Button("Install camera") { model.installCameraExtension() }
                 } else {
-                    Label("LIVE · \(Int(model.fps)) fps", systemImage: "circle.fill").font(.caption.bold()).foregroundStyle(.white)
-                        .padding(.horizontal, 10).padding(.vertical, 4).background(.black.opacity(0.6), in: Capsule()).padding(14)
+                    Button("Refresh") { model.refreshWebcamOutput() }
                 }
             }
-            SettingRow(icon: "video", title: "macOS webcam", subtitle: "Appears as \u{201C}PixelBridge Camera\u{201D} in FaceTime, Zoom, Teams, OBS and browsers. Status: \(model.extensionState)") {
-                Button("Install camera") { model.installCameraExtension() }
-            }
         }
+    }
+
+    private var previewView: some View {
+            ZStack(alignment: .topLeading) {
+                PixelBufferView(buffer: model.preview)
+                    .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                if model.preview == nil {
+                    VStack(spacing: 12) {
+                        Image(systemName: "camera.aperture").font(.system(size: 38, weight: .light))
+                        Text(model.privacy ? "Paused for privacy" : model.cameraError ?? (model.cameraOn ? "Opening the lens…" : "Your next point of view"))
+                            .font(.headline)
+                        if !model.cameraOn && !model.privacy {
+                            Text("Choose a lens, then start the camera.").font(.callout).foregroundStyle(.white.opacity(0.6))
+                        }
+                    }
+                    .foregroundStyle(.white.opacity(0.9)).multilineTextAlignment(.center)
+                    .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    HStack(spacing: 7) {
+                        Circle().fill(.green).frame(width: 6, height: 6)
+                        Text("Live").fontWeight(.semibold)
+                        Text("·  \(Int(model.fps)) fps  ·  \(zoomLabel)").monospacedDigit()
+                    }
+                    .font(.caption).foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(.black.opacity(0.65), in: Capsule()).padding(16)
+                }
+            }
+
+    }
+    private var zoomControls: some View {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .firstTextBaseline) {
+                    Label("Zoom", systemImage: "plus.magnifyingglass").font(.headline)
+                    Spacer()
+                    Text(zoomLabel).font(.system(size: 23, weight: .medium, design: .rounded)).monospacedDigit()
+                }
+                if let camera = model.currentCamera, camera.maximumZoom > camera.minimumZoom {
+                    HStack(spacing: 14) {
+                        Text(String(format: "%.1f×", camera.minimumZoom)).font(.caption).foregroundStyle(.secondary)
+                        Slider(value: Binding(get: { log2(max(camera.minimumZoom, model.zoomRatio)) }, set: { model.setCameraZoom(pow(2, $0)) }),
+                               in: log2(camera.minimumZoom)...log2(camera.maximumZoom))
+                            .accessibilityLabel("Camera zoom").accessibilityValue(zoomLabel)
+                        Text(String(format: "%.0f×", camera.maximumZoom)).font(.caption).foregroundStyle(.secondary)
+                    }
+                    HStack(spacing: 8) {
+                        ForEach([camera.minimumZoom, 1, 2, 4].filter { $0 >= camera.minimumZoom && $0 <= camera.maximumZoom }.reduce(into: [Double]()) { result, value in
+                            if !result.contains(where: { abs($0 - value) < 0.01 }) { result.append(value) }
+                        }, id: \.self) { value in
+                            Button(String(format: "%.1f×", value)) { model.setCameraZoom(value) }
+                                .buttonStyle(.bordered).controlSize(.small)
+                                .tint(abs(model.zoomRatio - value) < 0.03 ? BridgeStyle.accent : nil)
+                        }
+                    }
+                } else {
+                    Text("Connect the updated phone app to load lens controls.").font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            .disabled(!canOperate)
+
+    }
+    private var captureControls: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 7) {
+                Label("Stabilization", systemImage: "hand.raised").font(.headline)
+                Picker("Stabilization", selection: $model.stabilization) {
+                    Text("Auto").tag("auto")
+                    Text("Optical").tag("optical").disabled(model.currentCamera?.supportsOptical != true || model.zoomRatio < 1)
+                    Text("Electronic").tag("electronic").disabled(model.currentCamera?.supportsElectronic != true)
+                    Text("Off").tag("off")
+                }.labelsHidden().frame(maxWidth: .infinity)
+                    .onChange(of: model.stabilization) { _, _ in model.sendCameraControls() }
+                Text(model.stabilizationStatus).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Divider()
+            VStack(alignment: .leading, spacing: 7) {
+                Label("Orientation", systemImage: "rotate.right").font(.headline)
+                Picker("Orientation", selection: $model.orientationMode) {
+                    Text("Auto").tag("auto")
+                    Text("0°").tag("0"); Text("90°").tag("90"); Text("180°").tag("180"); Text("270°").tag("270")
+                }.labelsHidden().frame(maxWidth: .infinity)
+                    .onChange(of: model.orientationMode) { _, _ in model.saveCameraControls() }
+                Text("Applied to preview and webcam").font(.caption).foregroundStyle(.secondary)
+            }
+            Divider()
+            Toggle("Mirror video", isOn: $model.mirrorCamera).toggleStyle(.switch)
+                .onChange(of: model.mirrorCamera) { _, _ in model.saveCameraControls() }
+        }
+        .padding(18)
+        .background(BridgeStyle.surface, in: RoundedRectangle(cornerRadius: 14))
+        .disabled(!canOperate)
     }
 }
 

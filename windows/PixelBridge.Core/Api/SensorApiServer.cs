@@ -27,6 +27,7 @@ public sealed class SensorApiServer : IAsyncDisposable
     public int Port { get; }
     public int ClientCount { get { lock (_lock) return _clients.Count; } }
     public long Rejected { get; private set; }
+    public event Action<bool>? DemandChanged;
 
     public SensorApiServer(int port, string token, Func<object> statusProvider)
     {
@@ -114,9 +115,9 @@ public sealed class SensorApiServer : IAsyncDisposable
             await stream.WriteAsync(Encoding.ASCII.GetBytes(resp), _cts.Token).ConfigureAwait(false);
 
             var ch = Channel.CreateBounded<string>(new BoundedChannelOptions(1024) { FullMode = BoundedChannelFullMode.DropOldest });
-            lock (_lock) _clients.Add(ch);
+            lock (_lock) { _clients.Add(ch); DemandChanged?.Invoke(true); }
             using var linkCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token);
-            var reader = Task.Run(() => DrainClientFrames(stream, linkCts.Token));
+            var reader = Task.Run(async () => { try { await DrainClientFrames(stream, linkCts.Token); } finally { linkCts.Cancel(); } });
             try
             {
                 await ch.Writer.WriteAsync(JsonSerializer.Serialize(new { type = "hello", schema = "pixelbridge.sensors.v1" }), linkCts.Token).ConfigureAwait(false);
@@ -129,7 +130,7 @@ public sealed class SensorApiServer : IAsyncDisposable
             finally
             {
                 linkCts.Cancel();
-                lock (_lock) _clients.Remove(ch);
+                lock (_lock) { _clients.Remove(ch); DemandChanged?.Invoke(_clients.Count > 0); }
             }
         }
         catch (Exception e) when (e is IOException or OperationCanceledException or SocketException) { }
