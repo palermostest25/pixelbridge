@@ -32,6 +32,7 @@ struct PhoneEntry: Identifiable {
     @Published var sendStatus = ""
     @Published var busy = false
     @Published var sending = false
+    @Published var replying = false
     @Published var selectedThread: String?
     @Published var downloads: [String] = []
     @Published var transferStatus = ""
@@ -130,7 +131,10 @@ struct PhoneEntry: Identifiable {
     func tool(_ op: String, _ args: [String: Any] = [:]) async {
         await perform { let result = try await request(op, args); if ["tools.volume", "tools.flashlight"].contains(op) { tools = result } }
     }
-    func reply(_ key: String, text: String) async -> Bool { await perform { _ = try await request("notifications.reply", ["key": key, "text": text]); sendStatus = "Reply handed to the phone app" } }
+    func reply(_ key: String, text: String) async -> Bool {
+        guard !replying else { return false }; replying = true; defer { replying = false }
+        return await perform { _ = try await request("notifications.reply", ["key": key, "text": text]); sendStatus = "Reply handed to the phone app" }
+    }
     func dismiss(_ key: String) async { await perform { _ = try await request("notifications.dismiss", ["key": key]); notifications.removeAll { $0.id == key } } }
     private func applyCalls(_ row: [String: Any]) { calls = rows(row, "calls"); status["calls"] = row }
     private func onEvent(_ row: [String: Any]) {

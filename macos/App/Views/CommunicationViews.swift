@@ -202,7 +202,7 @@ struct PhoneNotificationsView: View {
                     Text(notice.text("senderDisplay")).foregroundStyle(.secondary)
                     TextField("Your reply", text: $replyText, axis: .vertical).lineLimit(3...6).textFieldStyle(.roundedBorder)
                     if !phone.error.isEmpty { Text(phone.error).font(.caption).foregroundStyle(.orange) }
-                    HStack { Button("Cancel") { replying = nil }; Spacer(); Button("Send reply") { Task { if await phone.reply(notice.id, text: replyText) { replying = nil } } }.buttonStyle(.borderedProminent).disabled(replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+                    HStack { Button("Cancel") { replying = nil }; Spacer(); Button("Send reply") { Task { if await phone.reply(notice.id, text: replyText) { replying = nil } } }.buttonStyle(.borderedProminent).disabled(phone.replying || replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
                 }.padding(24).frame(width: 440)
             }
     }

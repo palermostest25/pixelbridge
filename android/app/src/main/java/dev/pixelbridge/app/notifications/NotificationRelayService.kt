@@ -73,7 +73,8 @@ class NotificationRelayService : NotificationListenerService() {
             val include = service.getSharedPreferences("settings", Context.MODE_PRIVATE).getBoolean("notif_content", false)
             val rows = JSONArray()
             targets.entries.sortedByDescending { it.value.postTime }.take(50).forEach { (key, sbn) ->
-                val row = JSONObject().put("key", key).put("app", sbn.packageName).put("appLabel", sbn.packageName).put("postedMs", sbn.postTime).put("redacted", !include)
+                val label = try { service.packageManager.getApplicationLabel(service.packageManager.getApplicationInfo(sbn.packageName, 0)).toString().take(200) } catch (_: Exception) { sbn.packageName }
+                val row = JSONObject().put("key", key).put("app", sbn.packageName).put("appLabel", label).put("postedMs", sbn.postTime).put("redacted", !include)
                     .put("canReply", include && sbn.notification.actions?.any { a -> a.remoteInputs?.any { it.allowFreeFormInput } == true } == true)
                 if (include) row.put("senderDisplay", sbn.notification.extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.take(200) ?: "")
                     .put("text", sbn.notification.extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.take(500) ?: "")
