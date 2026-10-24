@@ -18,6 +18,7 @@
     <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.4" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="../../assets/CallRing.wav" Link="CallRing.wav" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\..\windows\PixelBridge.Core\PixelBridge.Core.csproj" />
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>

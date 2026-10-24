@@ -32,6 +32,7 @@ public sealed class BridgeSettings
     public string? AdbPath { get; set; }
     public string? ScrcpyPath { get; set; }
     public bool AutoConnect { get; set; } = true;
+    public bool UseComputerCallAudio { get; set; } = true;
     public bool ShowOnConnect { get; set; } = true;
     public bool AutoUpdateCompanion { get; set; } = true;
     public int SensorRateHz { get; set; } = 50;

@@ -47,6 +47,8 @@ public sealed class PhoneWorkspace
     public string CallRoute { get; private set; } = "phone";
     public event Action? Changed;
     public event Action? PhoneDataChanged;
+    public event Action<PhoneCall?>? RingingChanged;
+    private string? _ringingId;
     public PhoneWorkspace(DeviceSession session) : this(async (op, args) => await session.RadioAsync(op, args, TimeSpan.FromSeconds(20)))
     {
         session.RadioEvent += OnEvent;
@@ -155,9 +157,17 @@ public sealed class PhoneWorkspace
     {
         if (row == null) return;
         Calls = Rows(row, "calls").Select(x => new PhoneCall(Str(x, "id"), Str(x, "number"), Str(x, "state"), Bool(x, "canHold"), Long(x, "connectedAtMs"), Bool(x,"canMerge"), Bool(x,"canSwap"))).ToArray();
+        UpdateRinging();
         Muted = Bool(row, "muted"); CallRoute = Str(row, "route"); CanAddCall=Bool(row,"canAddCall");
         Endpoints = Rows(row,"endpoints").Select(x=>new PhoneEndpoint(Str(x,"id"),Str(x,"name"),Str(x,"route"),Bool(x,"selected"))).ToArray();
     }
+    private void UpdateRinging()
+    {
+        var call = Calls.FirstOrDefault(x => x.State == "ringing");
+        if (call?.Id == _ringingId) return;
+        _ringingId = call?.Id; RingingChanged?.Invoke(call);
+    }
+    public void SilenceRinging() => RingingChanged?.Invoke(null); // Keep its ID so endpoint updates do not restart the same ring.
     private async Task StopWatchSafely() { try { await _rpc("phone.watch", new { enabled = false }); } catch { } }
     public void ConfigureNotifications(bool enabled, bool previews)
     {
@@ -171,7 +181,7 @@ public sealed class PhoneWorkspace
     public void Clear()
     {
         Interlocked.Increment(ref _dataGeneration); Interlocked.Increment(ref _messageGeneration); Interlocked.Increment(ref _contactGeneration);
-        Threads = []; Messages = []; Contacts = []; Calls = []; Accounts=[]; Endpoints=[]; CanAddCall=false; Muted=false; CallRoute="phone"; History = []; Apps = []; Notifications = []; Status = null; Tools = null; _watching = false; SelectedThread = null; Changed?.Invoke();
+        Threads = []; Messages = []; Contacts = []; Calls = []; Accounts=[]; Endpoints=[]; CanAddCall=false; Muted=false; CallRoute="phone"; History = []; Apps = []; Notifications = []; Status = null; Tools = null; _watching = false; SelectedThread = null; UpdateRinging(); Changed?.Invoke();
     }
     public static string ReceiptLabel(JsonObject row) => Str(row, "state") switch { "queued" => "Queued on phone", "sent" => "Sent to carrier", "delivered" => "Delivery confirmed", "failed" => "Send failed: " + Str(row, "error"), _ => "Status unknown—check the phone" };
     private static IEnumerable<JsonObject> Rows(JsonObject node, string key) => (node[key] as JsonArray ?? new JsonArray()).OfType<JsonObject>();

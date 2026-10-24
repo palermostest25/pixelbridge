@@ -27,6 +27,6 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>PixelBridge receives audio from your connected Android phone.</string>
+	<string>Use this Mac’s microphone for calls through your USB-connected Pixel.</string>
 </dict>
 </plist>

@@ -126,6 +126,8 @@ jobs:
         with:
           name: phone-app
           path: artifacts/android
+      - name: Test Mac protocol and microphone conversion
+        run: swift test --package-path macos
       - run: bash macos/build-local.sh
         env:
           PIXELBRIDGE_ANDROID_APK: ${{ github.workspace }}/artifacts/android/PixelBridge-Android.apk

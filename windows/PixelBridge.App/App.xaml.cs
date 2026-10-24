@@ -12,6 +12,7 @@ public partial class App : Application
     private Forms.ToolStripMenuItem? _trayStatus, _trayPrivacy, _trayMute, _traySharing, _trayPower;
     public AppController Controller { get; private set; } = null!;
     private MainWindow? _window;
+    private readonly System.Media.SoundPlayer _callRinger = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -28,6 +29,13 @@ public partial class App : Application
         Log.Info($"PixelBridge {typeof(App).Assembly.GetName().Version} starting on {Environment.OSVersion}");
 
         Controller = new AppController();
+        Controller.Phone.RingingChanged += call => Dispatcher.BeginInvoke(() => {
+            _callRinger.Stop();
+            if (call == null) return;
+            ShowWindow(); _window?.ShowCalls();
+            try { _callRinger.SoundLocation = System.IO.Path.Combine(AppContext.BaseDirectory, "CallRing.wav"); _callRinger.PlayLooping(); }
+            catch { System.Media.SystemSounds.Exclamation.Play(); }
+        });
         Controller.Session.PhoneAttached += () => { if (Controller.Settings.ShowOnConnect) Dispatcher.BeginInvoke(ShowWindow); };
         Controller.Start();
         CreateTray();
@@ -104,6 +112,7 @@ public partial class App : Application
 
     public async Task QuitAsync()
     {
+        _callRinger.Stop(); _callRinger.Dispose();
         Log.Info("quitting");
         if (_tray != null) { _tray.Visible = false; _tray.Dispose(); }
         _window?.AllowClose();

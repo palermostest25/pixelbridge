@@ -134,6 +134,7 @@ struct PhoneEntry: Identifiable {
         if let id = accountID, !id.isEmpty { args["accountId"] = id }
         await perform { _ = try await request("phone.call", args) }
     }
+    func refreshCallStatus() async { await perform { status = try await request("phone.status"); applyCalls(status["calls"] as? [String: Any] ?? [:]) } }
     func callAction(_ op: String, call: PhoneEntry? = nil, args: [String: Any] = [:]) async {
         var a = args; if let call { a["callId"] = call.id }
         await perform { _ = try await request(op, a) }

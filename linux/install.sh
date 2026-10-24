@@ -16,4 +16,4 @@ Terminal=false
 Categories=Utility;AudioVideo;
 ENTRY
 printf 'Installed PixelBridge. Open it from your application launcher.\n'
-printf 'Dependencies: adb, ffmpeg, scrcpy; v4l2loopback for webcam output; pactl/pacat for microphone output.\n'
+printf 'Dependencies: adb, ffmpeg, scrcpy; v4l2loopback for webcam output; pulseaudio-utils (pactl, pacat, parec, paplay) for microphone output and calls.\n'

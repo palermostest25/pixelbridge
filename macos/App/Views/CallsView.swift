@@ -104,8 +104,7 @@ struct CallsView: View {
             ForEach(phone.calls) { call in
                 activeCall(call)
             }
-            Label("Call audio uses your Pixel’s speaker or connected headset.", systemImage: "speaker.wave.2")
-                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            USBCallAudioControls(audio: model.callAudio)
         }
     }
 
@@ -122,6 +121,7 @@ struct CallsView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 115), spacing: 10)], spacing: 10) {
                     if call.text("state") == "ringing" {
                         actionButton("Answer", "phone.fill", "phone.answer", call).tint(BridgeStyle.accent)
+                        Button("Silence ring", systemImage: "bell.slash") { model.silenceCallRingtone() }
                     } else {
                         Button { Task { await phone.callAction("phone.mute", args: ["enabled": !phone.muted]) } } label: {
                             Label(phone.muted ? "Unmute" : "Mute", systemImage: phone.muted ? "mic.slash.fill" : "mic.fill").frame(maxWidth: .infinity, minHeight: 30)
@@ -166,5 +166,33 @@ struct CallsView: View {
             if phone.error.isEmpty { try? await Task.sleep(nanoseconds: 1_500_000_000) }
             placing = false
         }
+    }
+}
+
+struct USBCallAudioControls: View {
+    @EnvironmentObject var phone: PhoneWorkspaceModel
+    @ObservedObject var audio: USBCallAudio
+    @EnvironmentObject var session: DeviceSession
+    @EnvironmentObject var model: AppModel
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("Use Mac microphone and speakers", isOn: Binding(get: { audio.enabled }, set: { audio.setEnabled($0, session: session) }))
+            Text(audio.status).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if audio.active {
+                HStack {
+                    Image(systemName: "mic.fill").foregroundStyle(BridgeStyle.accent)
+                    ProgressView(value: phone.muted ? 0 : max(0, min(1, (audio.microphoneLevel + 60) / 60))).frame(maxWidth: 140)
+                        .accessibilityLabel("Mac microphone input").accessibilityValue(String(format: "%.0f dB", audio.microphoneLevel))
+                }
+                Button(audio.listeningMuted ? "Unmute speakers" : "Mute speakers", systemImage: audio.listeningMuted ? "speaker.wave.2" : "speaker.slash") { audio.toggleListeningMute() }
+            } else if audio.enabled && !phone.calls.isEmpty {
+                Button("Retry Mac audio") { audio.retry(session: session) }.disabled(!session.isConnected)
+            }
+            if !audio.microphoneDiagnostics.isEmpty {
+                DisclosureGroup("Audio diagnostics") {
+                    Text("Mac microphone peak: \(Int(audio.microphonePeak)) dB. \(audio.microphoneDiagnostics)").font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+            }
+        }.disabled(model.privacy)
     }
 }

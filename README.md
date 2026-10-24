@@ -9,6 +9,7 @@ Bring your Android phone to your desktop: messages, calls, contacts and notifica
 | Microphone output | VB-CABLE | PipeWire/PulseAudio virtual source | BlackHole |
 | Camera controls | Lens, zoom, OIS/EIS, rotation, mirror | Same | Same |
 | Messages, contacts, calls, notification replies, compass and phone tools | Yes | Yes | Yes |
+| USB call microphone/speakers (supported Android phones) | Yes | Yes | Yes |
 | Internet control | System tray | System tray | Menu bar |
 
 ## Install
@@ -27,7 +28,11 @@ On the phone, enable USB debugging and authorize this computer. Install `PixelBr
 
 **Messages** reads recent SMS conversations and sends texts through your phone’s carrier plan. Allow SMS permissions in the phone setup. Delivery receipts distinguish queued, sent and delivered; a lost acknowledgement never triggers an automatic resend. The current view loads up to 60 recent conversations and 75 messages per conversation. RCS, MMS attachments and proprietary messaging histories are not available through Android’s SMS provider. **Notifications** can reply to RCS and messaging apps when that app exposes Android’s reply action. Enable notification access and content sharing on the phone first; content is hidden by default.
 
-**Calls** has its own dialer, numeric keypad and recent-call history inside PixelBridge. Choose a SIM/phone line when your phone has more than one. To answer, decline, end, hold, mute, change audio output or send keypad tones, choose PixelBridge as the Pixel’s default Phone app using **Set up on Pixel** (or **Enable incoming-call controls**). Mute and audio output reflect Android’s confirmed state. Merge/swap controls are available when the phone and carrier support them. The phone includes a local dialer and incoming-call controls for when USB is disconnected. **Cellular call audio stays on the phone, speaker or a connected headset**; Android does not expose both sides of a cellular call to an ordinary USB companion. PixelBridge’s microphone feature is separate. No call or message is sent merely by connecting.
+**Calls** has its own dialer, numeric keypad and recent-call history inside PixelBridge. Choose a SIM/phone line when your phone has more than one. To answer, decline, end, hold, mute, change audio output or send keypad tones, choose PixelBridge as the Pixel’s default Phone app using **Set up on Pixel** (or **Enable incoming-call controls**). Mute and phone audio output reflect Android’s confirmed state. Merge/swap controls appear when supported by the phone and carrier. The phone also includes a local dialer for when USB is disconnected. No call or message is sent merely by connecting.
+
+**Computer call audio** uses the computer’s microphone and speakers over the already-authorized USB debugging connection, independently of iPhone calling or Bluetooth pairing. Enable **Use Mac/computer microphone and speakers** in Calls. It requires Android 13+ and phone support for Android’s system call-audio redirection interface; unsupported phones show an error and retain their phone/headset route. The authorized ADB shell runs an ephemeral helper from the installed companion APK using its existing audio-interception permission. The ordinary phone app receives no privileged permission. macOS asks for microphone access and uses voice processing for echo cancellation. Windows uses the default communications speaker and default microphone; Linux uses PulseAudio/PipeWire compatibility tools. Headphones are useful on desktops without echo cancellation. Microphone mute and speaker mute are separate. Streams stop on call end, hold, privacy mode or disconnect, and no call audio is saved.
+
+On macOS, click **PixelBridge’s menu-bar icon** for a compact dialer and call controls, or use **⌘⇧C** while PixelBridge is active. Incoming calls ring on the Mac and open this popover; answer, decline, silence the ring, mute or hang up there. Windows/Linux ring and bring their Calls page forward. Silencing a ring does not decline the call.
 
 **Contacts** offers name/number search, calling and SMS composition. **Compass** uses magnetic north with tilt compensation, sensor accuracy and field strength, and pauses when hidden. **Phone Tools** provides flashlight, media volume, a short find-phone ring, vibration, app launching, display wake/sleep, confirmed restart and file transfers to/from Downloads. Existing files are not intentionally overwritten. Private phone data is held in desktop memory and cleared on disconnect or privacy mode; Android stores bounded send receipts without message bodies to prevent duplicate submissions.
 
@@ -37,7 +42,7 @@ Plugging in the selected phone brings the dashboard forward by default; disable 
 
 The phone’s **Available after restart** option resumes only the idle USB listener after first unlock. Camera, mic, location and motion capture remain off until requested. Desktop packages include a matching companion APK and can update it in place on the next connection; signature mismatches stop with an explanation and never uninstall the phone app. Updates for an existing installation must use its original signing key.
 
-On macOS, closing the dashboard removes the Dock icon and keeps the menu-bar controls and bridge alive. Choose **Open PixelBridge** to restore the window. **Quit PixelBridge** exits completely. Windows and Linux keep their system-tray controls when the window closes.
+On macOS, closing the dashboard removes the Dock icon and keeps the menu-bar call popover, ringing and bridge alive. Choose **Open PixelBridge** to restore the window. **Quit PixelBridge** exits completely. Windows and Linux keep their system-tray controls when the window closes.
 
 ## Camera and power
 

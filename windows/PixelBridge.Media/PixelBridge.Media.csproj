@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PixelBridge.Core\PixelBridge.Core.csproj" />
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\native-bin\Release\PixelBridge.Native.dll" Link="PixelBridge.Native.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\native-bin\Release\PixelBridge.Native.dll')" />

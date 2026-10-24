@@ -20,7 +20,9 @@ public sealed class PhoneHubPage : UserControl, IPage
     private readonly Button _send = new(), _answer = new(), _end = new(), _hold = new(), _mute = new(), _merge = new(), _swap = new();
     private readonly ComboBox _route = new(), _account = new();
     private readonly Slider _volume = new();
-    private readonly CheckBox _flash = new();
+    private readonly CheckBox _flash = new(), _computerAudio = new();
+    private readonly TextBlock _callAudioStatus = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly Button _listeningMute = new();
     private readonly DispatcherTimer _searchTimer;
     private readonly DispatcherTimer _volumeTimer;
     private bool _volumePending;
@@ -96,7 +98,10 @@ public sealed class PhoneHubPage : UserControl, IPage
         _root.Children.Add(Button("Enable incoming-call controls…", async()=>{await _c.Commands.OpenSetupAsync("calling");_c.LaunchScrcpy(false);}));
         var dial=new StackPanel {Orientation=Orientation.Horizontal};_number.Width=300;_number.FontSize=18;_number.Margin=new(0,0,12,0);dial.Children.Add(_number);dial.Children.Add(Button("Call",async()=>await Phone.CallAsync(_number.Text,(_account.SelectedItem as PhoneAccount)?.Id)));_root.Children.Add(dial);
         _account.Margin=new(0,12,0,12);_account.MinWidth=240;_account.HorizontalAlignment=HorizontalAlignment.Left;_root.Children.Add(_account);
-        _root.Children.Add(Hint("Call audio stays on the phone, speaker or Bluetooth headset. To answer and manage calls here, choose PixelBridge as the default Phone app in phone setup."));
+        _computerAudio.Content="Use computer microphone and speakers";_computerAudio.Margin=new(0,8,0,8);
+        RoutedEventHandler computerAudioChanged=(_,_)=>{if(_updating)return;_c.Settings.UseComputerCallAudio=_computerAudio.IsChecked==true;_c.Settings.Save();_c.CallAudio.SetEnabled(_computerAudio.IsChecked==true);};
+        _computerAudio.Checked+=computerAudioChanged;_computerAudio.Unchecked+=computerAudioChanged;_root.Children.Add(_computerAudio);
+        _root.Children.Add(_callAudioStatus);_listeningMute.Content="Mute speakers";_listeningMute.Click+=(_,_)=>_c.CallAudio.ToggleListeningMute();_listeningMute.HorizontalAlignment=HorizontalAlignment.Left;_root.Children.Add(_listeningMute);
         _root.Children.Add(Prepare(_list,140));
         var actions=new WrapPanel();
         foreach(var b in new[]{_answer,_end,_hold,_mute,_merge,_swap}){b.Padding=new(12,6,12,6);b.Margin=new(0,0,8,8);actions.Children.Add(b);}
@@ -107,7 +112,7 @@ public sealed class PhoneHubPage : UserControl, IPage
         _merge.Click+=async(_,_)=>await CallAction("phone.merge");_swap.Click+=async(_,_)=>await CallAction("phone.swap");
         _route.MinWidth=140;_route.Margin=new(0,0,8,8);actions.Children.Add(_route);
         _route.SelectionChanged+=async(_,_)=>{if(!_updating&&Phone.Calls.Count>0&&_route.SelectedItem is PhoneEndpoint ep)await Phone.CallActionAsync("phone.route",args:new{endpointId=ep.Id,route=ep.Route});};
-        _root.Children.Add(actions);
+        actions.Children.Add(Button("Silence ring",()=>{Phone.SilenceRinging();return Task.CompletedTask;}));_root.Children.Add(actions);
         _root.Children.Add(Hint("Use the keypad to dial. During a connected call, it sends tones for menus and extensions."));
         var keypad=new System.Windows.Controls.Primitives.UniformGrid {Columns=3,Width=240,HorizontalAlignment=HorizontalAlignment.Left};
         foreach(var digit in "123456789*0#") {
@@ -211,6 +216,7 @@ public sealed class PhoneHubPage : UserControl, IPage
         {
             if(!ReferenceEquals(_rows,Phone.Calls)){_rows=Phone.Calls;SetRows(_list,Phone.Calls.Select(x=>new Row(x.Id,x.Number,x.State,x)));}
             if(!ReferenceEquals(_messageRows,Phone.History)){_messageRows=Phone.History;SetRows(_messages,Phone.History.Select(x=>new Row(x.Id.ToString(),x.Name.Length>0?x.Name:x.Number,x.Number+" · "+DateTimeOffset.FromUnixTimeMilliseconds(x.DateMs).LocalDateTime.ToString("g"),x)));}
+            _updating=true;_computerAudio.IsChecked=_c.CallAudio.Enabled;_updating=false;_computerAudio.IsEnabled=!_c.PrivacyMode;_callAudioStatus.Text=_c.CallAudio.Status;_listeningMute.Visibility=_c.CallAudio.Active?Visibility.Visible:Visibility.Collapsed;_listeningMute.Content=_c.CallAudio.ListeningMuted?"Unmute speakers":"Mute speakers";
             var call=SelectedCall();_answer.IsEnabled=Phone.Dialer&&call?.State=="ringing";_end.IsEnabled=Phone.Dialer&&call!=null;_hold.IsEnabled=Phone.Dialer&&call?.CanHold==true;_hold.Content=call?.State=="held"?"Resume":"Hold";_mute.IsEnabled=_end.IsEnabled;_mute.Content=Phone.Muted?"Unmute microphone":"Mute microphone";_merge.IsEnabled=Phone.Dialer&&call?.CanMerge==true;_swap.IsEnabled=Phone.Dialer&&call?.CanSwap==true;
             _updating=true;
             if(!ReferenceEquals(_endpointRows,Phone.Endpoints)){_endpointRows=Phone.Endpoints;_route.ItemsSource=Phone.Endpoints;}

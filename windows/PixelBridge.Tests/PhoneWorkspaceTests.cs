@@ -4,6 +4,16 @@ using PixelBridge.Core;
 public class PhoneWorkspaceTests
 {
     private static JsonObject Ok(JsonObject result)=>new(){["ok"]=true,["result"]=result};
+    [Fact] public void IncomingRingStartsOnceAndStopsForAnswerAndPrivacy()
+    {
+        var model = new PhoneWorkspace((_, _) => Task.FromResult(Ok(new())));
+        var rings = new List<string?>(); model.RingingChanged += call => rings.Add(call?.Id);
+        JsonObject Event(string state) => JsonNode.Parse($$"""{"event":"phone.calls","calls":[{"id":"incoming","state":"{{state}}"}]}""")!.AsObject();
+        model.OnEvent(Event("ringing")); model.OnEvent(Event("ringing")); model.OnEvent(Event("active"));
+        Assert.Equal(new string?[] { "incoming", null }, rings);
+        model.OnEvent(Event("ringing")); model.SetEnabled(false); model.OnEvent(Event("ringing"));
+        Assert.Equal(new string?[] { "incoming", null, "incoming", null }, rings);
+    }
     [Fact] public void CallControlsFollowConfirmedPhoneStateAndClearForPrivacy()
     {
         var model = new PhoneWorkspace((_, _) => Task.FromResult(Ok(new())));
