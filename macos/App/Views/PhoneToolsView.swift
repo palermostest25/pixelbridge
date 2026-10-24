@@ -9,6 +9,7 @@ struct PhoneToolsView: View {
     @State private var selectedDownload: String?
     @State private var restarting = false
     @State private var volume = 0.0
+    @State private var editingVolume = false
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
             PhoneFeatureNotice()
@@ -17,7 +18,7 @@ struct PhoneToolsView: View {
                     Toggle("Flashlight", isOn: Binding(get: { phone.tools["flashlight"] as? Bool ?? false }, set: { on in Task { await phone.tool("tools.flashlight", ["enabled": on]) } })).labelsHidden().toggleStyle(.switch)
                 }
                 SettingRow(icon: "speaker.wave.2", title: "Media volume", subtitle: "Controls the phone’s media output.") {
-                    Slider(value: $volume, in: 0...max(1, (phone.tools["maximumVolume"] as? NSNumber)?.doubleValue ?? 15), step: 1, onEditingChanged: { editing in if !editing { Task { await phone.tool("tools.volume", ["value": Int(volume)]) } } }).frame(width: 190).accessibilityLabel("Phone media volume")
+                    Slider(value: $volume, in: 0...max(1, (phone.tools["maximumVolume"] as? NSNumber)?.doubleValue ?? 15), step: 1, onEditingChanged: { editing in editingVolume = editing; if !editing { Task { await phone.tool("tools.volume", ["value": Int(volume)]) } } }).frame(width: 190).accessibilityLabel("Phone media volume")
                 }
                 SettingRow(icon: "bell.and.waves.left.and.right", title: "Find phone", subtitle: "Plays the phone’s alarm sound for up to 15 seconds, at its current alarm volume.") {
                     HStack { Button("Ring") { Task { await phone.tool("tools.find", ["enabled": true]) } }; Button("Stop") { Task { await phone.tool("tools.find", ["enabled": false]) } } }
@@ -45,7 +46,9 @@ struct PhoneToolsView: View {
                 List(phone.downloads, id: \.self, selection: $selectedDownload) { name in HStack { Image(systemName: "doc").foregroundStyle(.secondary); Text(name).lineLimit(1); Spacer(); Button("Save to Mac…") { Task { await phone.downloadFile(name) } }.buttonStyle(.borderless).disabled(!session.isConnected) } }.frame(height: 220)
             }
             if !phone.transferStatus.isEmpty { Text(phone.transferStatus).font(.callout).foregroundStyle(.secondary) }
-        }.task { await phone.enter("tools"); volume = (phone.tools["volume"] as? NSNumber)?.doubleValue ?? 0 }.onDisappear { phone.leave() }
+        }.disabled(model.privacy)
+            .onChange(of: (phone.tools["volume"] as? NSNumber)?.doubleValue) { _, value in if !editingVolume, let value { volume = value } }
+            .task { await phone.enter("tools"); volume = (phone.tools["volume"] as? NSNumber)?.doubleValue ?? 0 }.onDisappear { phone.leave() }
             .confirmationDialog("Restart the connected phone?", isPresented: $restarting, titleVisibility: .visible) { Button("Restart phone") { Task { await phone.restartPhone() } }; Button("Cancel", role: .cancel) {} } message: { Text("Active calls and transfers will stop. PixelBridge will reconnect when the phone is ready; Android may need its first unlock.") }
     }
 }

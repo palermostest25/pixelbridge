@@ -59,8 +59,9 @@ struct MenuBarContent: View {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let center = NotificationCenter.default
         windowObservers.append(center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
-            guard let closing = note.object as? NSWindow, Self.isDashboard(closing) else { return }
+            guard let closing = note.object as? NSWindow else { return }
             DispatchQueue.main.async {
+                guard Self.isDashboard(closing) else { return }
                 let remaining = NSApplication.shared.windows.contains { $0 !== closing && Self.isDashboard($0) && $0.isVisible }
                 if !remaining { NSApplication.shared.setActivationPolicy(.accessory); Log.info("dashboard closed; running in menu bar") }
             }
