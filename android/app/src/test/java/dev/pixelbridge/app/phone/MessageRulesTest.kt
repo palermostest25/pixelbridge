@@ -34,6 +34,12 @@ class MessageRulesTest {
         pool.shutdown(); assertTrue(pool.awaitTermination(5,TimeUnit.SECONDS))
         assertEquals("sent",sender.status(token)!!.getString("state"))
     }
+    @Test(expected=IllegalStateException::class) fun corruptReceiptsDoNotPermitAnotherSend() {
+        SendLedger({ "invalid receipt data" }, {}).claim(token, "one", 1)
+    }
+    @Test(expected=IllegalStateException::class) fun storageFailureDoesNotClaimMessage() {
+        SendLedger({ "{}" }, { throw IllegalStateException("storage full") }).claim(token, "one", 1)
+    }
     @Test fun destinationAndFingerprintAreStable() {
         assertEquals("+15550100", MessageRules.destination("+1 (555) 0100"))
         assertEquals(MessageRules.fingerprint("+15550100","hello",1),MessageRules.fingerprint("+15550100","hello",1))

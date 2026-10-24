@@ -6,14 +6,14 @@ struct PhoneFeatureNotice: View {
     @EnvironmentObject var session: DeviceSession
     @EnvironmentObject var model: AppModel
     var body: some View {
-        if !phone.error.isEmpty {
+        if !session.isConnected {
+            Label("Connect your phone over USB to load this view.", systemImage: "cable.connector").foregroundStyle(.secondary)
+        } else if !phone.error.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Label(phone.error, systemImage: "info.circle").font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                 HStack { Button("Set up on phone…") { Task { await phone.openSetup(phone.page == "notifications" ? "notifications" : "communications"); model.openPhoneScreen() } }; Button("Show phone screen") { model.openPhoneScreen() } }
                     .disabled(!session.isConnected)
             }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
-        } else if !session.isConnected {
-            Label("Connect your phone over USB to load this view.", systemImage: "cable.connector").foregroundStyle(.secondary)
         }
     }
 }
@@ -74,7 +74,7 @@ struct MessagesView: View {
                     }
                     if !phone.sendStatus.isEmpty { Text(phone.sendStatus).font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
                 }.padding(16).frame(minWidth: 350)
-            }.frame(height: 530).background(BridgeStyle.surface, in: RoundedRectangle(cornerRadius: 12)).clipShape(RoundedRectangle(cornerRadius: 12))
+            }.frame(height: 440).background(BridgeStyle.surface, in: RoundedRectangle(cornerRadius: 12)).clipShape(RoundedRectangle(cornerRadius: 12))
             Text("SMS uses your phone’s carrier plan. RCS and other messaging apps can be replied to from Notifications when they provide Android’s reply action.").font(.caption).foregroundStyle(.secondary)
         }.task { await phone.enter("messages") }.onDisappear { phone.leave() }
             .onChange(of: phone.selectedThread) { _, id in guard let id else { return }; number = phone.threads.first { $0.id == id }?.text("address") ?? ""; Task { await phone.loadMessages(id) } }

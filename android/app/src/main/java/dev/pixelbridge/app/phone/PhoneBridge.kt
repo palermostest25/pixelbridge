@@ -38,7 +38,7 @@ class PhoneBridge(private val context: Context, private val respond: (JSONObject
     private val main = Handler(Looper.getMainLooper())
     private val resolver = context.contentResolver
     private val prefs = context.getSharedPreferences("sms-receipts", Context.MODE_PRIVATE)
-    private val ledger = SendLedger({ prefs.getString("ledger", "{}") ?: "{}" }, { prefs.edit().putString("ledger", it).commit() })
+    private val ledger = SendLedger({ prefs.getString("ledger", "{}") ?: "{}" }, { check(prefs.edit().putString("ledger", it).commit()) { "Could not save SMS receipt; no new message was submitted" } })
     private var watching = false
     private var ringtone: Ringtone? = null
     private val stopRing = Runnable { ringtone?.stop(); ringtone = null }

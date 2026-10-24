@@ -53,11 +53,17 @@ public sealed class PhoneHubView : UserControl
         try{await action();}catch(Exception e){_detail.Text=e.Message;}finally{_working=false;Tick();}
     }
     private static TextBlock Hint(string value)=>new(){Text=value,TextWrapping=TextWrapping.Wrap,Classes={"secondary"}};
-    private static ListBox Prepare(ListBox list,double height)
+    private readonly Dictionary<ListBox, TextBlock> _empty = new();
+    private Control Prepare(ListBox list,double height)
     {
         list.Height=height;list.BorderThickness=new(0);
-        list.ItemTemplate=new FuncDataTemplate<Row>((row,scope)=>new StackPanel{Spacing=5,Margin=new(6,7),Children={new TextBlock{Text=row?.Title,FontWeight=FontWeight.SemiBold,TextWrapping=TextWrapping.Wrap},new TextBlock{Text=row?.Detail,Classes={"secondary"},FontSize=12,TextWrapping=TextWrapping.Wrap}}});return list;
+        list.ItemTemplate=new FuncDataTemplate<Row>((row,scope)=>new StackPanel{Spacing=5,Margin=new(6,7),Children={new TextBlock{Text=row?.Title,FontWeight=FontWeight.SemiBold,TextWrapping=TextWrapping.Wrap},new TextBlock{Text=row?.Detail,Classes={"secondary"},FontSize=12,TextWrapping=TextWrapping.Wrap}}});
+        var grid = new Grid(); grid.Children.Add(list);
+        var empty = new TextBlock { Text=EmptyLabel(list), TextWrapping=TextWrapping.Wrap, TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center, MaxWidth=280, Margin=new(22), Classes={"secondary"} };
+        _empty[list]=empty; grid.Children.Add(empty);
+        return new Border { Classes={"card"}, Padding=new(0), Margin=new(0), Child=grid };
     }
+    private string EmptyLabel(ListBox list) => list==_apps ? "Your phone’s apps appear here." : list==_files ? "Files from the phone’s Downloads folder appear here." : list==_messages ? (_mode=="calls" ? "Your recent calls appear here after call-history access is enabled." : "Choose a conversation, or enter a number to start a new message.") : _mode switch { "messages"=>"Your recent SMS conversations appear here.", "calls"=>"No active call. You’re ready when the phone rings.", "contacts"=>"Search for someone by name or phone number.", _=>"Your phone’s notifications appear here after access is enabled." };
     private void BuildMessages()
     {
         _root.Children.Add(Action("New message",()=>{Phone.BeginNewMessage();_number.Text="";_draft.Text="";_list.SelectedIndex=-1;return Task.CompletedTask;}));
@@ -106,10 +112,13 @@ public sealed class PhoneHubView : UserControl
     {
         var actions=new WrapPanel();actions.Children.Add(Action("Ring phone (15 s)",async()=>await Phone.ToolAsync("tools.find",new{enabled=true})));actions.Children.Add(Action("Stop ring",async()=>await Phone.ToolAsync("tools.find",new{enabled=false})));actions.Children.Add(Action("Vibrate",async()=>await Phone.ToolAsync("tools.vibrate")));actions.Children.Add(Action("Display off",_model.Commands.SleepAsync));actions.Children.Add(Action("Wake display",_model.Commands.WakeAsync));actions.Children.Add(Action("Restart phone…",async()=>{if(await ConfirmRestart())await _model.Commands.RestartAsync();}));_root.Children.Add(actions);
         var media=new StackPanel{Orientation=Orientation.Horizontal,Spacing=22};_flash.Click+=async(_,_)=>{if(!_loading)await Phone.ToolAsync("tools.flashlight",new{enabled=_flash.IsChecked==true});};media.Children.Add(_flash);media.Children.Add(new TextBlock{Text="Media volume",VerticalAlignment=VerticalAlignment.Center});media.Children.Add(_volume);_root.Children.Add(media);
-        _root.Children.Add(new TextBlock{Text="Apps",FontSize=18,FontWeight=FontWeight.SemiBold});_root.Children.Add(Prepare(_apps,160));_root.Children.Add(Action("Open selected app",async()=>{if(_apps.SelectedItem is Row{Value:PhoneApp app})await _model.Commands.LaunchAsync(app.Component);}));
-        _root.Children.Add(new TextBlock{Text="Phone downloads",FontSize=18,FontWeight=FontWeight.SemiBold});_root.Children.Add(Prepare(_files,190));var files=new WrapPanel();files.Children.Add(Action("Refresh files",RefreshFiles));
+        var columns = new Grid { ColumnDefinitions=new("*,20,*") };
+        var apps = new StackPanel { Spacing=12 }; var downloads = new StackPanel { Spacing=12 };
+        Grid.SetColumn(downloads,2); columns.Children.Add(apps); columns.Children.Add(downloads); _root.Children.Add(columns);
+        apps.Children.Add(new TextBlock{Text="Apps",FontSize=18,FontWeight=FontWeight.SemiBold});apps.Children.Add(Prepare(_apps,220));apps.Children.Add(Action("Open selected app",async()=>{if(_apps.SelectedItem is Row{Value:PhoneApp app})await _model.Commands.LaunchAsync(app.Component);}));
+        downloads.Children.Add(new TextBlock{Text="Phone downloads",FontSize=18,FontWeight=FontWeight.SemiBold});downloads.Children.Add(Prepare(_files,220));var files=new WrapPanel();files.Children.Add(Action("Refresh files",RefreshFiles));
         files.Children.Add(Action("Send file…",async()=>{var top=TopLevel.GetTopLevel(this);if(top==null)return;var picked=await top.StorageProvider.OpenFilePickerAsync(new(){AllowMultiple=false,Title="Send to phone Downloads"});var path=picked.FirstOrDefault()?.TryGetLocalPath();if(path!=null){_detail.Text="Sending file…";await _model.Commands.UploadAsync(path);_detail.Text="Sent to phone Downloads";await RefreshFiles();}}));
-        files.Children.Add(Action("Save selected file…",async()=>{if(_files.SelectedItem is not Row row)return;var top=TopLevel.GetTopLevel(this);if(top==null)return;var picked=await top.StorageProvider.SaveFilePickerAsync(new(){SuggestedFileName=row.Title,Title="Save phone download"});var path=picked?.TryGetLocalPath();if(path!=null){_detail.Text="Receiving file…";await _model.Commands.DownloadAsync(row.Title,path);_detail.Text="File saved";}}));_root.Children.Add(files);
+        files.Children.Add(Action("Save selected file…",async()=>{if(_files.SelectedItem is not Row row)return;var top=TopLevel.GetTopLevel(this);if(top==null)return;var picked=await top.StorageProvider.SaveFilePickerAsync(new(){SuggestedFileName=row.Title,Title="Save phone download"});var path=picked?.TryGetLocalPath();if(path!=null){_detail.Text="Receiving file…";await _model.Commands.DownloadAsync(row.Title,path);_detail.Text="File saved";}}));downloads.Children.Add(files);
     }
     private async Task<bool> ConfirmRestart()
     {
@@ -125,26 +134,27 @@ public sealed class PhoneHubView : UserControl
     private void SetRows(ListBox list,IEnumerable<Row> rows){var key=(list.SelectedItem as Row)?.Key;var values=rows.ToArray();_loading=true;list.ItemsSource=values;list.SelectedItem=values.FirstOrDefault(x=>x.Key==key);_loading=false;}
     public void Tick()
     {
+        foreach(var pair in _empty) pair.Value.IsVisible=pair.Key.ItemCount==0;
         foreach(var button in Avalonia.LogicalTree.LogicalExtensions.GetLogicalDescendants(this).OfType<Button>())if(Equals(button.Tag,"phoneAction"))button.IsEnabled=_model.Session.IsConnected&&!_model.Privacy;
         _flash.IsEnabled=_volume.IsEnabled=_model.Session.IsConnected&&!_model.Privacy;
         if(_active&&_needsLoad&&_model.Session.IsConnected)_=LoadAsync();_notice.Text=!_model.Session.IsConnected?"Connect your phone over USB. Data loads when this view is open.":Phone.Error;
-        _send.IsEnabled=_model.Session.IsConnected&&!Phone.Sending&&!string.IsNullOrWhiteSpace(_number.Text)&&!string.IsNullOrWhiteSpace(_draft.Text);_receipt.Text=Phone.SendStatus;
+        _send.IsEnabled=_model.Session.IsConnected&&!_model.Privacy&&!Phone.Sending&&!string.IsNullOrWhiteSpace(_number.Text)&&!string.IsNullOrWhiteSpace(_draft.Text);_receipt.Text=Phone.SendStatus;
         if(_mode=="messages"){if(!ReferenceEquals(_rows,Phone.Threads)){_rows=Phone.Threads;SetRows(_list,Phone.Threads.Select(x=>new Row(x.Id.ToString(),x.Address,(x.Unread?"Unread · ":"")+x.Preview,x)));}if(!ReferenceEquals(_messageRows,Phone.Messages)){_messageRows=Phone.Messages;SetRows(_messages,Phone.Messages.Select(x=>new Row(x.Id.ToString(),x.Body,(x.Incoming?"Received":"Sent")+" · "+DateTimeOffset.FromUnixTimeMilliseconds(x.DateMs).LocalDateTime.ToString("t"),x)));if(_messages.ItemCount>0)_messages.ScrollIntoView(_messages.ItemCount-1);}}
         if(_mode=="contacts"&&!ReferenceEquals(_rows,Phone.Contacts)){_rows=Phone.Contacts;SetRows(_list,Phone.Contacts.Select(x=>new Row(x.Id+":"+x.Number,x.Name,x.Number,x)));}
         if(_mode=="calls"){if(!ReferenceEquals(_rows,Phone.Calls)){_rows=Phone.Calls;SetRows(_list,Phone.Calls.Select(x=>new Row(x.Id,x.Number,x.State,x)));}if(!ReferenceEquals(_messageRows,Phone.History)){_messageRows=Phone.History;SetRows(_messages,Phone.History.Select(x=>new Row(x.Id.ToString(),x.Name.Length>0?x.Name:x.Number,x.Number+" · "+DateTimeOffset.FromUnixTimeMilliseconds(x.DateMs).LocalDateTime.ToString("g"),x)));}var call=SelectedCall();_answer.IsEnabled=Phone.Dialer&&call?.State=="ringing";_end.IsEnabled=Phone.Dialer&&call!=null;_hold.IsEnabled=Phone.Dialer&&call?.CanHold==true;_hold.Content=call?.State=="held"?"Resume":"Hold";_mute.IsEnabled=_end.IsEnabled;_mute.Content=Phone.Muted?"Unmute":"Mute";_loading=true;_route.SelectedItem=Phone.CallRoute;_route.IsEnabled=_end.IsEnabled;_loading=false;}
         if(_mode=="notifications"&&!ReferenceEquals(_notificationRows,Phone.Notifications)){_notificationRows=Phone.Notifications;SetRows(_list,Phone.Notifications.Select(x=>new Row(x.Key,x.App+(x.Sender.Length>0?" · "+x.Sender:""),x.Redacted?"Content hidden by phone":x.Text??"",x)));}
-        if(_mode=="tools"){if(!ReferenceEquals(_appRows,Phone.Apps)){_appRows=Phone.Apps;SetRows(_apps,Phone.Apps.Select(x=>new Row(x.Component,x.Name,x.Component,x)));}if(Phone.Tools!=null){_loading=true;_flash.IsChecked=(bool?)Phone.Tools["flashlight"]==true;_volume.Maximum=(int?)Phone.Tools["maximumVolume"]??15;if(!_volumePending&&!_volume.IsPointerOver)_volume.Value=(int?)Phone.Tools["volume"]??0;_loading=false;}}
+        if(_mode=="tools"){if(!ReferenceEquals(_appRows,Phone.Apps)){_appRows=Phone.Apps;SetRows(_apps,Phone.Apps.Select(x=>new Row(x.Component,x.Name,"Installed on your phone",x)));}if(Phone.Tools!=null){_loading=true;_flash.IsChecked=(bool?)Phone.Tools["flashlight"]==true;_volume.Maximum=(int?)Phone.Tools["maximumVolume"]??15;if(!_volumePending&&!_volume.IsPointerOver)_volume.Value=(int?)Phone.Tools["volume"]??0;_loading=false;}}
     }
 }
 
 public sealed class CompassHubView : UserControl
 {
-    private readonly AppModel _model;private readonly TextBlock _heading=new(){FontSize=48,FontWeight=FontWeight.SemiBold},_detail=new(){TextWrapping=TextWrapping.Wrap};private readonly CompassRose _rose=new(){Width=320,Height=320};
+    private readonly AppModel _model;private readonly TextBlock _heading=new(){FontSize=42,FontWeight=FontWeight.SemiBold,TextWrapping=TextWrapping.Wrap},_detail=new(){TextWrapping=TextWrapping.Wrap};private readonly CompassRose _rose=new(){Width=320,Height=320};
     public CompassHubView(AppModel model)
     {
         _model=model;var root=new StackPanel{Spacing=24};root.Children.Add(new TextBlock{Text="Compass",FontSize=28,FontWeight=FontWeight.SemiBold});var row=new StackPanel{Orientation=Orientation.Horizontal,Spacing=32};row.Children.Add(_rose);var values=new StackPanel{Spacing=16,VerticalAlignment=VerticalAlignment.Center,MaxWidth=320};values.Children.Add(_heading);values.Children.Add(new TextBlock{Text="Magnetic north",FontSize=18});values.Children.Add(_detail);row.Children.Add(values);root.Children.Add(row);root.Children.Add(new TextBlock{Text="Hold the phone flat, with its top edge pointing forward. Keep it away from magnets, speakers and metal surfaces. Readings pause when this view is hidden.",Classes={"secondary"},TextWrapping=TextWrapping.Wrap,MaxWidth=720,HorizontalAlignment=HorizontalAlignment.Left});Content=root;
     }
-    public void Tick(){var r=_model.Compass.Reading;_heading.Text=r==null?"Finding north…":$"{r.Heading:0}° {r.Direction}";_detail.Text=r==null?"Connect your phone to use its rotation and magnetic sensors.":$"{r.Quality}\n\nPitch {r.Pitch:0.0}°    Roll {r.Roll:0.0}°"+(r.FieldMicrotesla is double f?$"\nMagnetic field {f:0.0} µT":"");_rose.Heading=r?.Heading??0;_rose.InvalidateVisual();}
+    public void Tick(){var r=_model.Compass.Reading;_heading.Text=r==null?(_model.Session.IsConnected?"Finding north…":"Connect your phone"):$"{r.Heading:0}° {r.Direction}";_detail.Text=r==null?"Connect your phone to use its rotation and magnetic sensors.":$"{r.Quality}\n\nPitch {r.Pitch:0.0}°    Roll {r.Roll:0.0}°"+(r.FieldMicrotesla is double f?$"\nMagnetic field {f:0.0} µT":"");_rose.Heading=r?.Heading??0;_rose.InvalidateVisual();}
 }
 sealed class CompassRose : Control
 {

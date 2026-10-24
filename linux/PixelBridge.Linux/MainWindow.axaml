@@ -40,7 +40,7 @@
         </DockPanel>
 
         <Grid Grid.Column="1">
-            <ScrollViewer>
+            <ScrollViewer x:Name="DashboardScroll">
                 <StackPanel Margin="36,28" MaxWidth="1000">
                     <!-- HOME -->
                     <StackPanel x:Name="PageHome">

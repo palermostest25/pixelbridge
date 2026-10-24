@@ -103,6 +103,7 @@ public partial class MainWindow : Window
         PageHome.IsVisible = key == "home"; PageCamera.IsVisible = key == "camera"; PageMic.IsVisible = key == "mic";
         PageSensors.IsVisible = key == "sensors"; PageLocation.IsVisible = key == "location"; PageNetwork.IsVisible = key == "network";
         PageBluetooth.IsVisible = key == "bluetooth"; PagePhone.IsVisible = key == "phone"; PageSettings.IsVisible = key == "settings";
+        DashboardScroll.Offset = new Vector(0,0);
         Tick();
     }
 
@@ -127,7 +128,7 @@ public partial class MainWindow : Window
 
     private void Tick()
     {
-        _hub?.SetActive(IsVisible && WindowState != WindowState.Minimized && PhoneHub.IsVisible);
+        _hub?.SetActive(IsVisible && WindowState != WindowState.Minimized && PhoneHub.IsVisible && !_m.Privacy);
         _m.CompassVisible = IsVisible && WindowState != WindowState.Minimized && _page == "compass";
         _m.Session.SetSensorDemand("compass", _m.CompassVisible);
         if (_m.CompassVisible) _compassView?.Tick();

@@ -31,7 +31,7 @@ class SendLedger(private val load: () -> String, private val save: (String) -> U
         data.put(token, row); save(data.toString()); publicRow(token, row)
     }
     fun status(token: String): JSONObject? = synchronized(lock) { read().optJSONObject(token)?.let { publicRow(token, it) } }
-    private fun read(): JSONObject = try { JSONObject(load()) } catch (_: Exception) { JSONObject() }
+    private fun read(): JSONObject = try { JSONObject(load()) } catch (e: Exception) { throw IllegalStateException("Saved SMS receipts are unavailable; check the phone before sending another message", e) }
     private fun publicRow(token: String, row: JSONObject) = JSONObject().put("token", token).put("state", row.optString("state"))
         .put("time", row.optLong("time")).put("error", row.opt("error") ?: JSONObject.NULL)
 }

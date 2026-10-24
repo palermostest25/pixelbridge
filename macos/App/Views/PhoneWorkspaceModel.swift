@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import CryptoKit
 import Foundation
 import PixelBridgeKit
 
@@ -17,7 +18,7 @@ struct PhoneEntry: Identifiable {
     private var bag = Set<AnyCancellable>()
     private var epoch = 0, messageGeneration = 0, contactGeneration = 0
     private var enabled = true, watching = false
-    private var pendingToken: String?, pendingNumber: String?, pendingText: String?
+    private var pendingToken: String?, pendingFingerprint: String?
     @Published var threads: [PhoneEntry] = []
     @Published var messages: [PhoneEntry] = []
     @Published var contacts: [PhoneEntry] = []
@@ -56,6 +57,7 @@ struct PhoneEntry: Identifiable {
     private func rows(_ value: [String: Any], _ key: String) -> [PhoneEntry] { (value[key] as? [[String: Any]] ?? []).map { PhoneEntry(values: $0) } }
     private func request(_ op: String, _ args: [String: Any] = [:]) async throws -> [String: Any] {
         guard enabled else { throw PhoneError("Turn off privacy mode to use phone features") }
+        guard session.isConnected else { throw PhoneError("Connect your phone over USB to use this feature.") }
         let generation = epoch
         let response = try await session.radio(op, args, timeout: 20)
         guard enabled, generation == epoch else { throw PhoneError("The phone connection changed; refresh this view") }
@@ -68,6 +70,7 @@ struct PhoneEntry: Identifiable {
     }
     func enter(_ page: String) async {
         self.page = page
+        guard session.isConnected, enabled else { return }
         await perform {
             let watch = ["messages", "calls", "contacts"].contains(page)
             if watching != watch { _ = try await request("phone.watch", ["enabled": watch]); watching = watch }
@@ -105,16 +108,17 @@ struct PhoneEntry: Identifiable {
         contactGeneration += 1; let generation = contactGeneration
         await perform { let result = try await request("contacts.list", ["query": query, "limit": 100]); if generation == contactGeneration { contacts = rows(result, "contacts") } }
     }
-    func newMessage() { selectedThread = nil; messages = []; pendingToken = nil; pendingText = nil; pendingNumber = nil; sendStatus = "" }
+    func newMessage() { selectedThread = nil; messages = []; pendingToken = nil; pendingFingerprint = nil; sendStatus = "" }
     func send(number: String, text: String) async -> Bool {
         guard !sending, !number.trimmingCharacters(in: .whitespaces).isEmpty, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.count <= 12000 else { return false }
         sending = true; defer { sending = false }
         return await perform {
-            if pendingNumber == number, pendingText == text, let token = pendingToken {
+            let fingerprint = SHA256.hash(data: Data((number.trimmingCharacters(in: .whitespaces) + "\0" + text).utf8)).map { String(format: "%02x", $0) }.joined()
+            if pendingFingerprint == fingerprint, let token = pendingToken {
                 let receipt = try await request("sms.receipt", ["token": token]); sendStatus = "Previous send: " + receiptLabel(receipt) + ". Check the conversation before starting a new message."; throw PhoneError("This message has already been submitted. It will not be sent twice.")
             }
             let token = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-            pendingToken = token; pendingNumber = number; pendingText = text; sendStatus = "Sending to phone…"
+            pendingToken = token; pendingFingerprint = fingerprint; sendStatus = "Sending to phone…"
             let response = try await request("sms.send", ["number": number, "text": text, "token": token]); sendStatus = receiptLabel(response)
         }
     }
@@ -143,8 +147,12 @@ struct PhoneEntry: Identifiable {
     private func receiptLabel(_ receipt: [String: Any]) -> String {
         switch receipt["state"] as? String { case "queued": "Queued on phone"; case "sent": "Sent to carrier"; case "delivered": "Delivery confirmed"; case "failed": "Send failed: \(receipt["error"] as? String ?? "Check phone")"; default: "Status unknown—check the phone" }
     }
-    func setEnabled(_ value: Bool) { enabled = value; if !value { leave(); clear() } }
-    private func clear() { epoch += 1; messageGeneration += 1; contactGeneration += 1; watching = false; threads = []; messages = []; contacts = []; calls = []; history = []; apps = []; notifications = []; status = [:]; tools = [:]; downloads = [] }
+    func setEnabled(_ value: Bool) {
+        enabled = value
+        if !value { let selectedPage = page; leave(); page = selectedPage; clear() }
+        else if session.isConnected, !page.isEmpty { Task { await self.enter(self.page) } }
+    }
+    private func clear() { epoch += 1; messageGeneration += 1; contactGeneration += 1; watching = false; error = ""; threads = []; messages = []; contacts = []; calls = []; history = []; apps = []; notifications = []; status = [:]; tools = [:]; downloads = []; transferStatus = "" }
     private func adb(_ arguments: [String], timeout: TimeInterval = 120) async throws -> String {
         guard let adb = session.adb, !session.serial.isEmpty else { throw PhoneError("Connect the phone first") }
         let r = await adb.run(["-s", session.serial] + arguments, timeout: timeout)

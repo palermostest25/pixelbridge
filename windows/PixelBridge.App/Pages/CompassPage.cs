@@ -9,7 +9,7 @@ public sealed class CompassPage : UserControl,IPage
 {
     private readonly AppController _c;
     private readonly CompassRose _rose=new();
-    private readonly TextBlock _heading=new(){FontSize=48,FontWeight=FontWeights.SemiBold},_detail=new(){TextWrapping=TextWrapping.Wrap};
+    private readonly TextBlock _heading=new(){FontSize=42,FontWeight=FontWeights.SemiBold,TextWrapping=TextWrapping.Wrap},_detail=new(){TextWrapping=TextWrapping.Wrap};
     public CompassPage(AppController c)
     {
         _c=c;var root=new StackPanel();root.Children.Add(new TextBlock{Text="Compass",FontSize=28,FontWeight=FontWeights.SemiBold,Margin=new(0,0,0,28)});
@@ -19,7 +19,7 @@ public sealed class CompassPage : UserControl,IPage
     }
     public void Tick()
     {
-        var r=_c.Compass.Reading;_heading.Text=r==null?"Finding north…":$"{r.Heading:0}° {r.Direction}";
+        var r=_c.Compass.Reading;_heading.Text=r==null?(_c.Session.IsConnected?"Finding north…":"Connect your phone"):$"{r.Heading:0}° {r.Direction}";
         _detail.Text=r==null?"Connect your phone to use its rotation and magnetic sensors.":$"{r.Quality}\n\nPitch {r.Pitch:0.0}°    Roll {r.Roll:0.0}°"+(r.FieldMicrotesla is double f?$"\nMagnetic field {f:0.0} µT":"");
         _rose.Heading=r?.Heading??0;_rose.InvalidateVisual();
     }

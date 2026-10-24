@@ -20,8 +20,12 @@ class SmsResultReceiver : BroadcastReceiver() {
             } else return
         }
         val prefs = context.getSharedPreferences("sms-receipts", Context.MODE_PRIVATE)
-        val ledger = SendLedger({ prefs.getString("ledger", "{}") ?: "{}" }, { prefs.edit().putString("ledger", it).commit() })
-        val receipt = ledger.result(token, intent.getIntExtra("part", 0), delivery, ok, if (ok) null else "Phone/carrier error $resultCode") ?: return
-        PhoneBridge.events?.invoke(receipt.put("event", "sms.receipt"))
+        val ledger = SendLedger({ prefs.getString("ledger", "{}") ?: "{}" }, { check(prefs.edit().putString("ledger", it).commit()) { "Could not save SMS receipt; no new message was submitted" } })
+        try {
+            val receipt = ledger.result(token, intent.getIntExtra("part", 0), delivery, ok, if (ok) null else "Phone/carrier error $resultCode") ?: return
+            PhoneBridge.events?.invoke(receipt.put("event", "sms.receipt"))
+        } catch (_: Exception) {
+            PhoneBridge.events?.invoke(org.json.JSONObject().put("event", "phone.error").put("message", "SMS receipt could not be saved. Check the phone's conversation before sending again."))
+        }
     }
 }

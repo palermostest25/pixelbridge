@@ -55,13 +55,13 @@ struct ContentView: View {
                     Label(Page.home.title, systemImage: Page.home.icon).tag(Page.home)
                 }
                 Section("Conversations") {
-                    ForEach([Page.messages, .calls, .contacts, .notifications]) { p in Label(p.title, systemImage: p.icon).tag(p) }
+                    ForEach([Page.messages, .calls, .contacts, .notifications]) { p in Label { Text(p.title) } icon: { Image(systemName: p.icon).foregroundStyle(BridgeStyle.accent) }.tag(p) }
                 }
                 Section("Capture") {
-                    ForEach([Page.camera, .mic, .sensors, .compass, .location]) { p in Label(p.title, systemImage: p.icon).tag(p) }
+                    ForEach([Page.camera, .mic, .sensors, .compass, .location]) { p in Label { Text(p.title) } icon: { Image(systemName: p.icon).foregroundStyle(BridgeStyle.accent) }.tag(p) }
                 }
                 Section("Connect") {
-                    ForEach([Page.network, .bluetooth, .phone, .tools]) { p in Label(p.title, systemImage: p.icon).tag(p) }
+                    ForEach([Page.network, .bluetooth, .phone, .tools]) { p in Label { Text(p.title) } icon: { Image(systemName: p.icon).foregroundStyle(BridgeStyle.accent) }.tag(p) }
                 }
                 Section("Support") { Label(Page.diagnostics.title, systemImage: Page.diagnostics.icon).tag(Page.diagnostics) }
             }
@@ -75,10 +75,6 @@ struct ContentView: View {
                     }
                     StatusPill()
                 }.padding(18)
-            }
-            .safeAreaInset(edge: .bottom) {
-                Label("One cable. More possibilities.", systemImage: "cable.connector")
-                    .font(.caption).foregroundStyle(.secondary).padding(18)
             }
         } detail: {
             ScrollView {
@@ -116,7 +112,7 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem {
                     Toggle(isOn: Binding(get: { model.privacy }, set: { model.setPrivacy($0) })) { Label("Privacy", systemImage: "eye.slash") }
-                        .help("Pause camera, microphone, location and sensors")
+                        .help("Pause capture and access to phone data")
                 }
             }
         }

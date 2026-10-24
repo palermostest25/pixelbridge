@@ -27,15 +27,16 @@ class NotificationRelayService : NotificationListenerService() {
         val label = try {
             packageManager.getApplicationLabel(packageManager.getApplicationInfo(sbn.packageName, 0)).toString()
         } catch (_: Exception) { sbn.packageName }
-        targets.entries.removeAll { it.value.key == sbn.key }
+        val replaced = targets.entries.filter { it.value.key == sbn.key }.map { it.key }
+        replaced.forEach { targets.remove(it); dev.pixelbridge.app.phone.PhoneBridge.events?.invoke(JSONObject().put("event", "notifications.removed").put("key", it)) }
         while (targets.size >= 200) targets.keys.firstOrNull()?.let { targets.remove(it) }
         val key = UUID.randomUUID().toString(); targets[key] = sbn
         val canReply = includeContent && sbn.notification.actions?.any { a -> a.remoteInputs?.any { it.allowFreeFormInput } == true } == true
-        val j = JSONObject().put("key", key).put("canReply", canReply).put("app", sbn.packageName).put("appLabel", label).put("postedMs", sbn.postTime)
+        val j = JSONObject().put("key", key).put("canReply", canReply).put("app", sbn.packageName).put("appLabel", label.take(200)).put("postedMs", sbn.postTime)
             .put("category", sbn.notification.category ?: JSONObject.NULL)
             .put("redacted", !includeContent)
         if (includeContent) {
-            j.put("senderDisplay", extras.getCharSequence(Notification.EXTRA_TITLE)?.toString() ?: "")
+            j.put("senderDisplay", extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.take(200) ?: "")
             j.put("text", extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.take(500) ?: "")
         }
         sink?.invoke(j)

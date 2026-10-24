@@ -59,10 +59,10 @@ struct MenuBarContent: View {
     func applicationDidFinishLaunching(_ notification: Notification) {
         let center = NotificationCenter.default
         windowObservers.append(center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
-            guard let closing = note.object as? NSWindow, closing.title == "PixelBridge" else { return }
+            guard let closing = note.object as? NSWindow, Self.isDashboard(closing) else { return }
             DispatchQueue.main.async {
-                let remaining = NSApplication.shared.windows.contains { $0 !== closing && $0.title == "PixelBridge" && $0.isVisible }
-                if !remaining { NSApplication.shared.setActivationPolicy(.accessory) }
+                let remaining = NSApplication.shared.windows.contains { $0 !== closing && Self.isDashboard($0) && $0.isVisible }
+                if !remaining { NSApplication.shared.setActivationPolicy(.accessory); Log.info("dashboard closed; running in menu bar") }
             }
         })
         windowObservers.append(center.addObserver(forName: .pixelBridgeShowDashboard, object: nil, queue: .main) { _ in
@@ -73,9 +73,15 @@ struct MenuBarContent: View {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         Self.showDashboard { Self.reopen?() }; return true
     }
+    private static func isDashboard(_ window: NSWindow) -> Bool {
+        window.title == "PixelBridge" || window.identifier?.rawValue.contains("dashboard") == true
+    }
     static func showDashboard(_ open: () -> Void) {
         NSApplication.shared.setActivationPolicy(.regular)
-        open()
+        if let existing = NSApplication.shared.windows.first(where: { isDashboard($0) && ($0.isVisible || $0.isMiniaturized) }) {
+            if existing.isMiniaturized { existing.deminiaturize(nil) }
+            existing.makeKeyAndOrderFront(nil)
+        } else { open() }
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
 }

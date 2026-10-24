@@ -102,7 +102,7 @@ public partial class MainWindow : Window
 
     private void Tick()
     {
-        if (PageHost.Content is PhoneHubPage hub) hub.SetActive(IsVisible && WindowState != WindowState.Minimized);
+        if (PageHost.Content is PhoneHubPage hub) hub.SetActive(IsVisible && WindowState != WindowState.Minimized && !_c.PrivacyMode);
         _c.CompassVisible = IsVisible && WindowState != WindowState.Minimized && PageHost.Content is CompassPage;
         _c.Session.SetSensorDemand("compass", _c.CompassVisible);
         _c.PreviewVisible = IsVisible && WindowState != WindowState.Minimized && PageHost.Content is CameraPage;

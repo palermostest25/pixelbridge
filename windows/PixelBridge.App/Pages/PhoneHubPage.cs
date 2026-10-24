@@ -63,14 +63,20 @@ public sealed class PhoneHubPage : UserControl, IPage
         try{await action();}catch(Exception e){_detail.Text=e.Message;}finally{_working=false;Tick();}
     }
     private static TextBlock Hint(string text)=>new(){Text=text,TextWrapping=TextWrapping.Wrap,Foreground=SystemColors.GrayTextBrush,Margin=new(0,8,0,12)};
-    private static ListBox Prepare(ListBox list,double height)
+    private readonly Dictionary<ListBox, TextBlock> _empty = new();
+    private FrameworkElement Prepare(ListBox list,double height)
     {
         list.Height=height;list.BorderThickness=new(0);list.Margin=new(0,0,0,12);
         var stack=new FrameworkElementFactory(typeof(StackPanel));stack.SetValue(FrameworkElement.MarginProperty,new Thickness(8,7,8,7));
         var title=new FrameworkElementFactory(typeof(TextBlock));title.SetBinding(TextBlock.TextProperty,new Binding("Title"));title.SetValue(TextBlock.FontWeightProperty,FontWeights.SemiBold);title.SetValue(TextBlock.TextWrappingProperty,TextWrapping.Wrap);stack.AppendChild(title);
         var detail=new FrameworkElementFactory(typeof(TextBlock));detail.SetBinding(TextBlock.TextProperty,new Binding("Detail"));detail.SetValue(TextBlock.FontSizeProperty,12.0);detail.SetValue(TextBlock.TextWrappingProperty,TextWrapping.Wrap);detail.SetValue(TextBlock.MarginProperty,new Thickness(0,5,0,0));detail.SetResourceReference(TextBlock.ForegroundProperty,"TextFillColorSecondaryBrush");stack.AppendChild(detail);
-        list.ItemTemplate=new DataTemplate{VisualTree=stack};return list;
+        list.ItemTemplate=new DataTemplate{VisualTree=stack};
+        var grid = new Grid(); grid.Children.Add(list);
+        var empty = new TextBlock { Text=EmptyLabel(list), TextWrapping=TextWrapping.Wrap, TextAlignment=TextAlignment.Center, HorizontalAlignment=HorizontalAlignment.Center, VerticalAlignment=VerticalAlignment.Center, MaxWidth=280, Margin=new(22) };
+        empty.SetResourceReference(TextBlock.ForegroundProperty,"TextFillColorSecondaryBrush"); _empty[list]=empty; grid.Children.Add(empty);
+        return new Border { Style=(Style)FindResource("Card"), Padding=new(0), Margin=new(0,0,0,12), Child=grid };
     }
+    private string EmptyLabel(ListBox list) => list==_apps ? "Your phone’s apps appear here." : list==_files ? "Files from the phone’s Downloads folder appear here." : list==_messages ? (_mode=="calls" ? "Your recent calls appear here after call-history access is enabled." : "Choose a conversation, or enter a number to start a new message.") : _mode switch { "messages"=>"Your recent SMS conversations appear here.", "calls"=>"No active call. You’re ready when the phone rings.", "contacts"=>"Search for someone by name or phone number.", _=>"Your phone’s notifications appear here after access is enabled." };
     private void BuildMessages()
     {
         var top=new StackPanel {Orientation=Orientation.Horizontal};top.Children.Add(Button("New message",()=>{Phone.BeginNewMessage();_number.Text="";_draft.Text="";_list.SelectedIndex=-1;return Task.CompletedTask;}));_root.Children.Add(top);
@@ -146,11 +152,13 @@ public sealed class PhoneHubPage : UserControl, IPage
         actions.Children.Add(Button("Restart phone…",async()=>{if(MessageBox.Show(Window.GetWindow(this),"Restart the phone? Active calls and transfers will stop. PixelBridge reconnects after Android starts and is unlocked.","Restart phone",MessageBoxButton.OKCancel,MessageBoxImage.Question)==MessageBoxResult.OK)await _c.Commands.RestartAsync();}));_root.Children.Add(actions);
         var media=new StackPanel{Orientation=Orientation.Horizontal,Margin=new(0,20,0,16)};_flash.Content="Flashlight";_flash.Margin=new(0,0,24,0);_flash.Click+=async(_,_)=>await Phone.ToolAsync("tools.flashlight",new{enabled=_flash.IsChecked==true});media.Children.Add(_flash);
         media.Children.Add(new TextBlock{Text="Media volume",VerticalAlignment=VerticalAlignment.Center,Margin=new(0,0,12,0)});_volume.Minimum=0;_volume.Maximum=15;_volume.Width=220;_volume.IsSnapToTickEnabled=true;_volume.TickFrequency=1;media.Children.Add(_volume);_root.Children.Add(media);
-        _root.Children.Add(new TextBlock{Text="Apps",FontSize=18,FontWeight=FontWeights.SemiBold});_root.Children.Add(Prepare(_apps,160));_root.Children.Add(Button("Open selected app",async()=>{if(_apps.SelectedItem is Row{Value:PhoneApp app})await _c.Commands.LaunchAsync(app.Component);}));
-        _root.Children.Add(new TextBlock{Text="Phone downloads",FontSize=18,FontWeight=FontWeights.SemiBold,Margin=new(0,22,0,12)});_root.Children.Add(Prepare(_files,190));
+        var columns = new Grid(); columns.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)}); columns.ColumnDefinitions.Add(new(){Width=new(20)}); columns.ColumnDefinitions.Add(new(){Width=new(1,GridUnitType.Star)});
+        var apps = new StackPanel(); var downloads = new StackPanel(); Grid.SetColumn(downloads,2); columns.Children.Add(apps); columns.Children.Add(downloads); _root.Children.Add(columns);
+        apps.Children.Add(new TextBlock{Text="Apps",FontSize=18,FontWeight=FontWeights.SemiBold,Margin=new(0,0,0,12)});apps.Children.Add(Prepare(_apps,220));apps.Children.Add(Button("Open selected app",async()=>{if(_apps.SelectedItem is Row{Value:PhoneApp app})await _c.Commands.LaunchAsync(app.Component);}));
+        downloads.Children.Add(new TextBlock{Text="Phone downloads",FontSize=18,FontWeight=FontWeights.SemiBold,Margin=new(0,0,0,12)});downloads.Children.Add(Prepare(_files,220));
         var files=new WrapPanel();files.Children.Add(Button("Refresh files",RefreshFiles));
         files.Children.Add(Button("Send file…",async()=>{var dialog=new OpenFileDialog{Multiselect=false};if(dialog.ShowDialog(Window.GetWindow(this))==true){_detail.Text="Sending file…";await _c.Commands.UploadAsync(dialog.FileName);_detail.Text="Sent to phone Downloads";await RefreshFiles();}}));
-        files.Children.Add(Button("Save selected file…",async()=>{if(_files.SelectedItem is Row row){var dialog=new SaveFileDialog{FileName=row.Title,OverwritePrompt=true};if(dialog.ShowDialog(Window.GetWindow(this))==true){_detail.Text="Receiving file…";await _c.Commands.DownloadAsync(row.Title,dialog.FileName);_detail.Text="File saved";}}}));_root.Children.Add(files);
+        files.Children.Add(Button("Save selected file…",async()=>{if(_files.SelectedItem is Row row){var dialog=new SaveFileDialog{FileName=row.Title,OverwritePrompt=true};if(dialog.ShowDialog(Window.GetWindow(this))==true){_detail.Text="Receiving file…";await _c.Commands.DownloadAsync(row.Title,dialog.FileName);_detail.Text="File saved";}}}));downloads.Children.Add(files);
         _detail.TextWrapping=TextWrapping.Wrap;_detail.Margin=new(0,12,0,0);_root.Children.Add(_detail);
     }
     private async Task RefreshFiles(){var names=await _c.Commands.DownloadsAsync();_files.ItemsSource=names.Select(n=>new Row(n,n,"Downloads",n)).ToArray();}
@@ -178,11 +186,12 @@ public sealed class PhoneHubPage : UserControl, IPage
     private static IEnumerable<Button> Buttons(DependencyObject root) { foreach(var child in LogicalTreeHelper.GetChildren(root)) if(child is DependencyObject d) { if(d is Button b)yield return b; foreach(var nested in Buttons(d))yield return nested; } }
     public void Tick()
     {
+        foreach(var pair in _empty) pair.Value.Visibility=pair.Key.Items.Count==0?Visibility.Visible:Visibility.Collapsed;
         foreach(var button in Buttons(_root)) if(Equals(button.Tag,"phoneAction"))button.IsEnabled=_c.Session.IsConnected&&!_c.PrivacyMode;
         _flash.IsEnabled=_volume.IsEnabled=_c.Session.IsConnected&&!_c.PrivacyMode;
         if(_active&&_needsLoad&&_c.Session.IsConnected)_=LoadAsync();
         _notice.Text=!_c.Session.IsConnected?"Connect your phone over USB. Data loads when this view is open.":Phone.Error;
-        _send.IsEnabled=_c.Session.IsConnected&&!Phone.Sending&&!string.IsNullOrWhiteSpace(_number.Text)&&!string.IsNullOrWhiteSpace(_draft.Text);_receipt.Text=Phone.SendStatus;
+        _send.IsEnabled=_c.Session.IsConnected&&!_c.PrivacyMode&&!Phone.Sending&&!string.IsNullOrWhiteSpace(_number.Text)&&!string.IsNullOrWhiteSpace(_draft.Text);_receipt.Text=Phone.SendStatus;
         if(_mode=="messages")
         {
             if(!ReferenceEquals(_rows,Phone.Threads)){_rows=Phone.Threads;SetRows(_list,Phone.Threads.Select(x=>new Row(x.Id.ToString(),x.Address,(x.Unread?"Unread · ":"")+x.Preview,x)));}
@@ -199,7 +208,7 @@ public sealed class PhoneHubPage : UserControl, IPage
         if(_mode=="notifications"&&!ReferenceEquals(_notificationRows,Phone.Notifications)){_notificationRows=Phone.Notifications;SetRows(_list,Phone.Notifications.Select(x=>new Row(x.Key,x.App+(x.Sender.Length>0?" · "+x.Sender:""),x.Redacted?"Content hidden by phone":x.Text??"",x)));}
         if(_mode=="tools")
         {
-            if(!ReferenceEquals(_appRows,Phone.Apps)){_appRows=Phone.Apps;SetRows(_apps,Phone.Apps.Select(x=>new Row(x.Component,x.Name,x.Component,x)));}
+            if(!ReferenceEquals(_appRows,Phone.Apps)){_appRows=Phone.Apps;SetRows(_apps,Phone.Apps.Select(x=>new Row(x.Component,x.Name,"Installed on your phone",x)));}
             if(Phone.Tools!=null){_updating=true;_flash.IsChecked=(bool?)Phone.Tools["flashlight"]==true;_volume.Maximum=(int?)Phone.Tools["maximumVolume"]??15;if(!_volumePending&&!_volume.IsMouseCaptureWithin)_volume.Value=(int?)Phone.Tools["volume"]??0;_updating=false;}
         }
     }
