@@ -18,6 +18,9 @@ swiftc -O -swift-version 5 -I "$build_dir" -L "$build_dir" -lPixelBridgeKit \
   -o "$app_dir/Contents/MacOS/PixelBridge"
 cp Resources/LocalInfo.plist "$app_dir/Contents/Info.plist"
 cp Resources/PixelBridge.icns "$app_dir/Contents/Resources/PixelBridge.icns"
+# Bundle the matching companion for an in-place update on the next USB connection.
+apk_path="${PIXELBRIDGE_ANDROID_APK:-$PWD/../android/app/build/outputs/apk/debug/app-debug.apk}"
+if [[ -f "$apk_path" ]]; then cp "$apk_path" "$app_dir/Contents/Resources/PixelBridge.apk"; fi
 printf 'APPL????' > "$app_dir/Contents/PkgInfo"
 signing_identity="${PIXELBRIDGE_SIGN_IDENTITY:--}"
 # A sole existing Apple identity keeps local updates trusted by Keychain. CI remains ad-hoc.

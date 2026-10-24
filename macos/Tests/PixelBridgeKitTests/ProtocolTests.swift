@@ -79,3 +79,15 @@ final class ProtocolTests: XCTestCase {
         XCTAssertThrowsError(try SensorSample(frame: Frame(type: MsgType.sensorSample, payload: p)))
     }
 }
+
+final class PhoneWorkspaceTests: XCTestCase {
+    func testCompassAndBootReadiness() {
+        XCTAssertEqual(PhoneBoot.evaluate(completed: "0", userState: "BOOTING"), .booting)
+        XCTAssertEqual(PhoneBoot.evaluate(completed: "1", userState: "RUNNING_LOCKED"), .firstUnlock)
+        XCTAssertEqual(PhoneBoot.evaluate(completed: "1", userState: "RUNNING_UNLOCKED"), .ready)
+        XCTAssertEqual(CompassMath.shortestDelta(from: 359, to: 1), 2, accuracy: 0.001)
+        XCTAssertEqual(CompassMath.quaternion([0,0,0,1], accuracy: 3)?.heading ?? -1, 0, accuracy: 0.001)
+        XCTAssertEqual(CompassMath.quaternion([0,0,-0.7071068,0.7071068], accuracy: 3)?.heading ?? -1, 90, accuracy: 0.001)
+        XCTAssertNil(CompassMath.quaternion([.nan,0,0,1], accuracy: 3))
+    }
+}

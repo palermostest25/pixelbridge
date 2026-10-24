@@ -28,6 +28,7 @@ public partial class App : Application
         Log.Info($"PixelBridge {typeof(App).Assembly.GetName().Version} starting on {Environment.OSVersion}");
 
         Controller = new AppController();
+        Controller.Session.PhoneAttached += () => { if (Controller.Settings.ShowOnConnect) Dispatcher.BeginInvoke(ShowWindow); };
         Controller.Start();
         CreateTray();
         _window = new MainWindow(Controller);

@@ -41,6 +41,15 @@ class MainActivity : Activity() {
 
         button("Start bridge") { BridgeService.start(this) }
         button("Allow camera") { askPermission(Manifest.permission.CAMERA) }
+        button("Allow messages, calling, contacts and call history") {
+            askPermissions(Manifest.permission.READ_CONTACTS, Manifest.permission.READ_SMS, Manifest.permission.SEND_SMS,
+                Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_PHONE_STATE, Manifest.permission.CALL_PHONE)
+        }
+        button("Enable call controls (default Phone app)…") {
+            val roles = getSystemService(android.app.role.RoleManager::class.java)
+            if (roles.isRoleAvailable(android.app.role.RoleManager.ROLE_DIALER)) startActivityForResult(roles.createRequestRoleIntent(android.app.role.RoleManager.ROLE_DIALER), 52)
+        }
+        button("Phone / ongoing call") { startActivity(Intent(this, dev.pixelbridge.app.phone.CallActivity::class.java)) }
         button("Allow microphone") { askPermission(Manifest.permission.RECORD_AUDIO) }
         button("Allow notifications (status icon)") { askPermission(Manifest.permission.POST_NOTIFICATIONS) }
         button("Allow Bluetooth (nearby devices)") {
@@ -53,6 +62,11 @@ class MainActivity : Activity() {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        root.addView(CheckBox(this).apply {
+            text = "Keep the USB bridge available after restarting"
+            isChecked = prefs.getBoolean("resume_after_restart", true)
+            setOnCheckedChangeListener { _, c -> prefs.edit().putBoolean("resume_after_restart", c).apply() }
+        })
         root.addView(CheckBox(this).apply {
             text = "Send notification titles/text to PC (off = app name only)"
             isChecked = prefs.getBoolean("notif_content", false)

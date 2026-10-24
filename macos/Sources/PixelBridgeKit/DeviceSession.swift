@@ -37,7 +37,7 @@ public struct BridgeSettings: Codable, Sendable {
 @MainActor
 public final class DeviceSession: ObservableObject {
     public static let package = "dev.pixelbridge.app"
-    public static let expectedAppVersion = "0.3.0"
+    public static let expectedAppVersion = "0.4.0"
     private static let approved: Set<String> = ["panther"]
     private static let channelPorts: [(String, Int)] = [("control", 27183), ("video", 27184), ("audio", 27185), ("telemetry", 27186)]
 
@@ -60,12 +60,16 @@ public final class DeviceSession: ObservableObject {
     private var heartbeat: Task<Void, Never>?
     private var lastPong: Int64 = 0
     private var nextAttempt = Date.distantPast
+    private var nextVersionProbe = Date.distantPast
     private var backoff: TimeInterval = 2
     private var busy = false
     private var radioPending: [Int: CheckedContinuation<[String: Any], Error>] = [:]
     private var radioId = 0
 
     // Event streams (delivered on the main actor).
+    public let phoneAttached = PassthroughSubject<Void, Never>()
+    private var presentSerial: String?
+    private var attemptedCompanionUpdates = Set<String>()
     public let sensor = PassthroughSubject<SensorSample, Never>()
     public let battery = PassthroughSubject<BatteryStatus, Never>()
     public let location = PassthroughSubject<LocationFix, Never>()
@@ -115,6 +119,7 @@ public final class DeviceSession: ObservableObject {
         let target: AdbDevice
         switch AdbClient.selectTarget(devices, configuredSerial: settings.targetSerial) {
         case .missing:
+            presentSerial = nil
             discoveredSerial = ""
             otherDevices = devices
             set(.disconnected, settings.targetSerial.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -132,10 +137,15 @@ public final class DeviceSession: ObservableObject {
             discoveredSerial = device.serial
             otherDevices = devices.filter { $0.serial != device.serial }
         }
+        if presentSerial != target.serial { presentSerial = target.serial; phoneAttached.send(()) }
         switch target.state {
         case "device": break
         case "unauthorized": set(.unauthorized, "Allow USB debugging for this Mac on the phone"); return
         default: set(.offline, "adb state '\(target.state)'"); return
+        }
+        if settings.autoConnect, [.apkMissing, .apkOutdated].contains(state), Date() >= nextVersionProbe {
+            nextVersionProbe = Date().addingTimeInterval(5)
+            if await adb.packageVersion(serial, Self.package) == Self.expectedAppVersion { retryNow() }
         }
         guard settings.autoConnect, Date() >= nextAttempt else { return }
         await connect()
@@ -158,13 +168,34 @@ public final class DeviceSession: ObservableObject {
         set(.connecting, "validating device")
         let echo = await adb.shell(serial, "echo pb-ok", timeout: 10)
         guard echo.ok, echo.stdout.contains("pb-ok") else { fail(.offline, "shell handshake failed"); return }
+        let completed = await adb.getprop(serial, "sys.boot_completed")
+        let current = await adb.shell(serial, "am get-current-user", timeout: 5).stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        let userID = Int(current).flatMap { $0 >= 0 ? $0 : nil } ?? 0
+        let userState = await adb.shell(serial, "am get-started-user-state \(userID)", timeout: 5).stdout
+        let readiness = PhoneBoot.evaluate(completed: completed, userState: userState)
+        guard readiness == .ready else {
+            set(.connecting, readiness == .booting ? "Android is starting. PixelBridge will reconnect automatically." : "Unlock Android once after its restart. PixelBridge will continue automatically.")
+            nextAttempt = Date().addingTimeInterval(2); return
+        }
         var props: [String: String] = [:]
         for p in ["ro.product.device", "ro.product.model", "ro.build.version.release", "ro.build.version.sdk", "ro.build.id"] {
             props[p] = await adb.getprop(serial, p)
         }
         deviceProps = props
         guard Self.approved.contains(props["ro.product.device"] ?? "") else { needsUser(.wrongDevice, "device '\(props["ro.product.device"] ?? "?")' is not pre-approved"); return }
-        guard let version = await adb.packageVersion(serial, Self.package) else { needsUser(.apkMissing, "PixelBridge app not installed on the phone"); return }
+        var phoneVersion = await adb.packageVersion(serial, Self.package)
+        let updateKey = serial + ":" + (phoneVersion ?? "missing")
+        if phoneVersion != Self.expectedAppVersion,
+           UserDefaults.standard.object(forKey: "autoUpdateCompanion") as? Bool ?? true,
+           !attemptedCompanionUpdates.contains(updateKey),
+           let apk = Bundle.main.url(forResource: "PixelBridge", withExtension: "apk") {
+            attemptedCompanionUpdates.insert(updateKey)
+            set(.connecting, "updating phone companion…")
+            let result = await adb.run(["-s", serial, "install", "-r", apk.path], timeout: 120)
+            guard result.ok else { needsUser(.apkOutdated, "Companion update failed: " + String((result.stderr + result.stdout).prefix(350)) + ". Updates require the original signing key."); return }
+            phoneVersion = await adb.packageVersion(serial, Self.package)
+        }
+        guard let version = phoneVersion else { needsUser(.apkMissing, "PixelBridge app not installed on the phone"); return }
         guard version == Self.expectedAppVersion else { needsUser(.apkOutdated, "phone app \(version), Mac expects \(Self.expectedAppVersion)"); return }
 
         set(.connecting, "launching phone app")

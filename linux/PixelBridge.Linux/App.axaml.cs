@@ -21,6 +21,7 @@ public partial class App : Application
         {
             Log.Info($"PixelBridge (Linux) starting on {Environment.OSVersion}");
             Model = new AppModel();
+            Model.Session.PhoneAttached += () => { if (Model.Settings.ShowOnConnect) Avalonia.Threading.Dispatcher.UIThread.Post(ShowWindow); };
             Model.Start();
             PowerMenu.IsChecked = Model.Settings.SavePower;
             Model.UsbSharing.Changed += () => Avalonia.Threading.Dispatcher.UIThread.Post(() => { SharingMenu.IsChecked = Model.UsbSharing.Enabled; SharingMenu.IsEnabled = Model.Session.IsConnected && !Model.UsbSharing.Busy; });

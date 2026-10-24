@@ -16,6 +16,8 @@ public partial class SettingsPage : UserControl, IPage
         var s = c.Settings;
         Startup.IsChecked = AppController.IsStartAtLoginEnabled();
         AutoConnect.IsChecked = s.AutoConnect;
+        ShowOnConnect.IsChecked = s.ShowOnConnect;
+        AutoUpdateCompanion.IsChecked = s.AutoUpdateCompanion;
         Vcam.IsChecked = s.VirtualCameraEnabled;
         Api.IsChecked = s.SensorWebSocketEnabled;
         TempWarn.SelectedIndex = s.BatteryTempWarnC <= 38 ? 0 : s.BatteryTempWarnC >= 42 ? 2 : 1;
@@ -34,6 +36,8 @@ public partial class SettingsPage : UserControl, IPage
         var s = _c.Settings;
         bool vcamBefore = s.VirtualCameraEnabled;
         s.AutoConnect = AutoConnect.IsChecked == true;
+        s.ShowOnConnect = ShowOnConnect.IsChecked == true;
+        s.AutoUpdateCompanion = AutoUpdateCompanion.IsChecked == true;
         s.VirtualCameraEnabled = Vcam.IsChecked == true;
         s.SensorWebSocketEnabled = Api.IsChecked == true;
         s.TargetSerial = Serial.Text.Trim().Length > 0 ? Serial.Text.Trim() : s.TargetSerial;

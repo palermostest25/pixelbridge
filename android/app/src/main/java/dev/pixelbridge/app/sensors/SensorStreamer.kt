@@ -41,14 +41,14 @@ class SensorStreamer(context: Context, private val sink: (Frame) -> Unit) : Sens
     }
 
     @Synchronized
-    fun start(rateHz: Int) {
+    fun start(rateHz: Int, types: Set<Int>? = null) {
         stop()
         val hz = rateHz.coerceIn(1, 200)
         val ht = HandlerThread("pb-sensors").also { it.start() }
         thread = ht
         val handler = Handler(ht.looper)
         val periodUs = 1_000_000 / hz
-        for (t in wanted) {
+        for (t in wanted.filter { types == null || it in types }) {
             val s = sm.getDefaultSensor(t) ?: continue
             // Light/proximity/pressure are on-change or slow; register at a modest rate.
             val p = if (t == Sensor.TYPE_LIGHT || t == Sensor.TYPE_PROXIMITY || t == Sensor.TYPE_PRESSURE) 200_000 else periodUs

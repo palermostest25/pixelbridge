@@ -11,6 +11,10 @@ public sealed class AppModel : IAsyncDisposable
 {
     public BridgeSettings Settings { get; } = BridgeSettings.Load();
     public DeviceSession Session { get; }
+    public PhoneWorkspace Phone { get; }
+    public PhoneCommands Commands { get; }
+    public CompassTracker Compass { get; } = new();
+    public volatile bool CompassVisible;
     public UsbSharing UsbSharing { get; }
     internal FfmpegVideo Video { get; } = new();
     internal PulseMic Mic { get; } = new();
@@ -42,11 +46,15 @@ public sealed class AppModel : IAsyncDisposable
     {
         if (string.IsNullOrEmpty(Settings.ApiToken)) { Settings.ApiToken = SensorApiServer.NewToken(); Settings.Save(); }
         Session = new DeviceSession(Settings);
+        Phone = new PhoneWorkspace(Session);
+        Phone.ConfigureNotifications(Settings.NotificationsEnabled, Settings.NotificationShowContent);
+        Commands = new PhoneCommands(Session);
         UsbSharing = new UsbSharing(Session);
         Session.StateChanged += (s, detail) => { if (s == LinkState.Connected) _ = UsbSharing.RefreshAsync(); };
         Session.Sensor += s =>
         {
             if (Privacy) return;
+            if (CompassVisible) Compass.Accept(s);
             lock (LatestSensors) LatestSensors[s.Type] = s;
             LastSensorUtc = DateTime.UtcNow;
             Api?.Publish(s, HostClock.NowNs());
@@ -127,6 +135,8 @@ public sealed class AppModel : IAsyncDisposable
     public void SetPrivacy(bool on)
     {
         Privacy = on;
+        Phone.SetEnabled(!on);
+        if (on) Compass.Reset();
         Session.PauseSensors(on);
         if (on) { foreach (var k in new[] { "video", "audio", "sensors", "location" }) Session.StopStream(k); Video.Stop(); Location = null; }
         else

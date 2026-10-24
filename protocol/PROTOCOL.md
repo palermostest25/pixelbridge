@@ -100,7 +100,7 @@ After `AUTH_OK` on control the device sends `CAPABILITIES`:
 
 `START_STREAM` kinds and options:
 
-* `sensors` `{rateHz:5|50|100}`, which also starts `BATTERY_STATUS`
+* `sensors` `{rateHz:5|10|50|100, types?:[Android sensor type ints]}`. Battery monitoring is independent and starts with the authenticated control link.
 * `video` `{cameraId:"0", width:1280, height:720, fps:30, bitrate:4000000, zoomRatio:1.0, stabilization:"auto"}`
   Optional camera controls default to `zoomRatio:1.0` and `stabilization:"auto"`.
   Stabilization accepts `auto`, `optical`, `electronic`, or `off`; unsupported modes are never enabled.
@@ -194,3 +194,37 @@ Events: `ble.scanResult {address, name, rssi, connectable, serviceUuids[], manuf
 `ble.services {address, services:[{uuid, characteristics:[{uuid, properties[]}]}]}`, `ble.notification`.
 Error codes: `permission`, `unavailable`, `not-connected`, `not-found`, `busy`, `timeout`, `gatt`, `limit`, `paused`, `unsupported`.
 At most 4 GATT connections. All are dropped, and scans stopped, when the host disconnects.
+
+
+## 10. Phone workspace (app 0.4.0)
+
+These operations use the authenticated `RADIO_REQUEST` / `RADIO_RESPONSE` envelope from section 9. Android checks each permission at the time of use. No outbound operation is retried automatically. Results are bounded below the 64 KiB control-frame limit.
+
+| op | args | result |
+|---|---|---|
+| `phone.status` | — | `{smsSupported,dialer,permissions:{readSms,sendSms,contacts,callLog,callPhone,phoneState},calls:{calls:[],muted,route},callAudio:"phone",notificationReplies}` |
+| `phone.watch` | `{enabled}` | Same as status; observes SMS, contacts and call-log changes only while enabled |
+| `contacts.list` | `{query?,limit?:1..100}` | `{contacts:[{id,name,number}]}` |
+| `sms.threads` | — | `{threads:[{id,address,preview,dateMs,incoming,unread}],format:"sms"}`; up to 60 threads from 2000 recent messages |
+| `sms.messages` | `{threadId,before?:dateMs}` | `{threadId,messages:[{id,address,body,dateMs,incoming,type,status}]}`; up to 75, newest first |
+| `sms.send` | `{number,text,token,subscriptionId?}` | Send receipt; token is 16–80 letters, digits, underscores or hyphens (desktop uses 32 hexadecimal characters); at most 12000 characters |
+| `sms.receipt` | `{token}` | `{state:"queued|sent|delivered|failed|unknown",token?,error?}` |
+| `phone.history` | — | `{calls:[{id,number,name,dateMs,durationSeconds,type}]}`; up to 75 |
+| `phone.call` | `{number}` | `{state:"requested"}` |
+| `phone.answer`, `phone.end`, `phone.hold`, `phone.unhold` | `{callId}` | `{state:"requested"}`; requires default Phone role |
+| `phone.dtmf` | `{callId,digit:"0..9|*|#"}` | Same; tone stops after a short interval |
+| `phone.mute` | `{enabled}` | Same |
+| `phone.route` | `{route:"phone|speaker|bluetooth"}` | Same; route must be available |
+| `notifications.list` | — | `{notifications:[{key,appLabel,senderDisplay,text,redacted,canReply,postedMs}]}` |
+| `notifications.reply` | `{key,text}` | `{state:"requested"}`; requires notification access, phone content opt-in and an active reply action |
+| `notifications.dismiss` | `{key}` | `{}` |
+| `tools.status` | — | `{volume,maximumVolume,flashlight,uptimeMs,vibrator}` |
+| `tools.flashlight` | `{enabled}` | Tools status; camera permission required |
+| `tools.volume` | `{value}` | Tools status; media volume only |
+| `tools.find` | `{enabled?:true}` | `{playing,maximumSeconds:15}` |
+| `tools.vibrate` | — | `{}`; half-second vibration |
+| `tools.apps` | — | `{apps:[{name,component}]}`; up to 150 launcher entries |
+
+Events: `phone.changed` coalesces provider changes; `phone.calls` carries the current calls/mute/route snapshot; `phone.error` carries asynchronous call failures; `sms.receipt` carries multipart send/delivery progress; `notifications.removed {key}` removes stale entries. Call audio remains on the phone. Sending the same SMS token twice never submits it again, and changing its payload is rejected. The phone retains at most 150 receipts/fingerprints without message bodies. If a send acknowledgement is lost, query its receipt; do not invent a new token to retry it automatically.
+
+The desktop uses serial-scoped ADB for explicit app launch, display, file transfer and confirmed reboot actions. The protected `.phone.SetupActivity` accepts only the named setup features `communications`, `calling` and `notifications`; Android owns the resulting permission and role dialogs. Setup and pairing entry points require the shell/system `DUMP` permission.

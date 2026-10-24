@@ -1,6 +1,6 @@
 # PixelBridge
 
-Turn an Android phone into a USB webcam, microphone, motion sensor, GPS receiver, Bluetooth LE radio and network adapter. No root. Built with a screenless Pixel 7 in mind; initial USB debugging authorization and Android permissions are still required.
+Bring your Android phone to your desktop: messages, calls, contacts and notifications alongside a USB webcam, microphone, compass, motion sensors, GPS, Bluetooth LE and internet sharing. No root. Built with a screenless Pixel 7 in mind; initial USB debugging authorization and Android permissions are still required.
 
 | | Windows 11 | Linux | macOS 14+ |
 |---|---|---|---|
@@ -8,6 +8,7 @@ Turn an Android phone into a USB webcam, microphone, motion sensor, GPS receiver
 | Webcam output | PixelBridge Camera / Media Foundation | PixelBridge Camera / v4l2loopback | OBS Virtual Camera, or a provisioned PixelBridge extension |
 | Microphone output | VB-CABLE | PipeWire/PulseAudio virtual source | BlackHole |
 | Camera controls | Lens, zoom, OIS/EIS, rotation, mirror | Same | Same |
+| Messages, contacts, calls, notification replies, compass and phone tools | Yes | Yes | Yes |
 | Internet control | System tray | System tray | Menu bar |
 
 ## Install
@@ -21,6 +22,22 @@ Download a platform package and the Android APK from [Releases](https://github.c
 On the phone, enable USB debugging and authorize this computer. Install `PixelBridge-Android.apk` with `adb install -r PixelBridge-Android.apk`. Open the phone app once, grant the capture permissions you need, then pair from the desktop. A phone without a working display needs an already authorized computer/key or another way to grant these permissions; PixelBridge cannot bypass Android authorization.
 
 **Existing installs:** Android updates must use the original signing key. CI APKs have a fresh debug signature and are intended for fresh installations. To preserve pairing and permissions on an existing phone, build using its original debug keystore. Never commit or upload that key. Do not uninstall an existing installation just to bypass a signing mismatch.
+
+## Conversations and phone tools
+
+**Messages** reads recent SMS conversations and sends texts through your phone’s carrier plan. Allow SMS permissions in the phone setup. Delivery receipts distinguish queued, sent and delivered; a lost acknowledgement never triggers an automatic resend. The current view loads up to 60 recent conversations and 75 messages per conversation. RCS, MMS attachments and proprietary messaging histories are not available through Android’s SMS provider. **Notifications** can reply to RCS and messaging apps when that app exposes Android’s reply action. Enable notification access and content sharing on the phone first; content is hidden by default.
+
+**Calls** can dial numbers and show call history with Android permission. To answer, end, hold, mute, change route or send keypad tones, choose PixelBridge as the phone’s default Phone app using **Open setup**. The phone includes a local dialer and incoming-call controls for when USB is disconnected. **Cellular call audio stays on the phone, speaker or Bluetooth headset**; Android does not expose both sides of a cellular call to an ordinary USB companion. PixelBridge’s microphone feature is separate. No call or message is sent merely by connecting.
+
+**Contacts** offers name/number search, calling and SMS composition. **Compass** uses magnetic north with tilt compensation, sensor accuracy and field strength, and pauses when hidden. **Phone Tools** provides flashlight, media volume, a short find-phone ring, vibration, app launching, display wake/sleep, confirmed restart and file transfers to/from Downloads. Existing files are not intentionally overwritten. Private phone data is held in desktop memory and cleared on disconnect or privacy mode; Android stores bounded send receipts without message bodies to prevent duplicate submissions.
+
+## Reconnect and background use
+
+Plugging in the selected phone brings the dashboard forward by default; disable this in Settings if preferred. PixelBridge waits through boot, opens the companion, recreates USB forwards and reconnects using the saved pairing. Android requires its first unlock after a restart before encrypted phone data is available. This cannot be skipped. On a screenless phone, open **Phone Screen** from an already authorized computer to enter that unlock yourself.
+
+The phone’s **Available after restart** option resumes only the idle USB listener after first unlock. Camera, mic, location and motion capture remain off until requested. Desktop packages include a matching companion APK and can update it in place on the next connection; signature mismatches stop with an explanation and never uninstall the phone app. Updates for an existing installation must use its original signing key.
+
+On macOS, closing the dashboard removes the Dock icon and keeps the menu-bar controls and bridge alive. Choose **Open PixelBridge** to restore the window. **Quit PixelBridge** exits completely. Windows and Linux keep their system-tray controls when the window closes.
 
 ## Camera and power
 

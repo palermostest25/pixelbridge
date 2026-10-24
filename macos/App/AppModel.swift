@@ -39,6 +39,8 @@ struct SensorPoint: Identifiable { let id: Int; let t: Double; let x: Float, y: 
 @MainActor
 final class AppModel: NSObject, ObservableObject {
     let session = DeviceSession()
+    lazy var phone = PhoneWorkspaceModel(session: session)
+    let compass = CompassModel()
     private let decoder = H264Decoder()
     private let sink = CameraSink()
     private let frameProcessor = VideoFrameProcessor()
@@ -126,12 +128,13 @@ final class AppModel: NSObject, ObservableObject {
     private var frameCount = 0, lastFpsTick = Date()
     private var sampleIndex = 0
     private var lastPreview = Date.distantPast
+    var compassVisible = false { didSet { updateSensorDemand() } }
     var sensorsVisible = false { didSet { updateSensorDemand() } }
     var cameraVisible = false
     private var sensorUIUpdates: [Int32: Date] = [:]
     private var windowVisible: Bool { NSApplication.shared.windows.contains { $0.title == "PixelBridge" && $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } }
     func updateSensorDemand() {
-        if sensorsVisible && windowVisible && !privacy { session.startStream("sensors", ["rateHz": session.settings.sensorRateHz]) }
+        if (sensorsVisible || compassVisible) && windowVisible && !privacy { session.startStream("sensors", sensorsVisible ? ["rateHz": session.settings.sensorRateHz] : ["rateHz": 10, "types": [1, 2, 9, 11]]) }
         else { session.stopStream("sensors") }
     }
 
@@ -175,6 +178,11 @@ final class AppModel: NSObject, ObservableObject {
                 if self.micOn { self.startMic() }
                 if self.locationOn { self.startLocation() }
             } else { self.preview = nil; self.sink.detach() }
+        }.store(in: &bag)
+        session.phoneAttached.sink { _ in
+            if UserDefaults.standard.object(forKey: "showOnConnect") as? Bool ?? true {
+                NotificationCenter.default.post(name: .pixelBridgeShowDashboard, object: nil)
+            }
         }.store(in: &bag)
         session.start()
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in Task { @MainActor in self?.refreshTether() } }
@@ -264,6 +272,8 @@ final class AppModel: NSObject, ObservableObject {
 
     func setPrivacy(_ on: Bool) {
         privacy = on
+        phone.setEnabled(!on)
+        if on { compass.reset() }
         if on {
             ["video", "audio", "sensors", "location"].forEach { session.stopStream($0) }
             preview = nil; location = nil; sink.detach()
@@ -288,7 +298,9 @@ final class AppModel: NSObject, ObservableObject {
     }
 
     private func onSensor(_ s: SensorSample) {
-        guard !privacy, sensorsVisible, windowVisible else { return }
+        guard !privacy, windowVisible else { return }
+        if compassVisible { compass.accept(s) }
+        guard sensorsVisible else { return }
         let now = Date()
         guard now.timeIntervalSince(sensorUIUpdates[s.type] ?? .distantPast) >= 1.0 / 15 else { return }
         sensorUIUpdates[s.type] = now

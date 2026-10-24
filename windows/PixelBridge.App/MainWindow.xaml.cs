@@ -22,13 +22,18 @@ public partial class MainWindow : Window
     private static readonly NavEntry[] MainItems =
     [
         new("home", "", "Home", c => new HomePage(c)),
+        new("messages", "\uE8F2", "Messages", c => new PhoneHubPage(c, "messages")),
+        new("calls", "\uE717", "Calls", c => new PhoneHubPage(c, "calls")),
+        new("contacts", "\uE77B", "Contacts", c => new PhoneHubPage(c, "contacts")),
         new("camera", "", "Camera", c => new CameraPage(c)),
         new("mic", "", "Microphone", c => new MicPage(c)),
         new("sensors", "", "Motion sensors", c => new SensorsPage(c)),
+        new("compass", "\uE81D", "Compass", c => new CompassPage(c)),
+        new("tools", "\uE713", "Phone tools", c => new PhoneHubPage(c, "tools")),
         new("location", "\uE81D", "Location", c => new LocationPage(c)),
         new("network", "", "Internet sharing", c => new NetworkPage(c)),
         new("bluetooth", "", "Bluetooth", c => new BluetoothPage(c)),
-        new("notifications", "", "Notifications", c => new NotificationsPage(c)),
+        new("notifications", "", "Notifications", c => new PhoneHubPage(c, "notifications")),
         new("phone", "", "Phone screen", c => new PhonePage(c)),
     ];
 
@@ -97,6 +102,9 @@ public partial class MainWindow : Window
 
     private void Tick()
     {
+        if (PageHost.Content is PhoneHubPage hub) hub.SetActive(IsVisible && WindowState != WindowState.Minimized);
+        _c.CompassVisible = IsVisible && WindowState != WindowState.Minimized && PageHost.Content is CompassPage;
+        _c.Session.SetSensorDemand("compass", _c.CompassVisible);
         _c.PreviewVisible = IsVisible && WindowState != WindowState.Minimized && PageHost.Content is CameraPage;
         _c.Session.SetSensorDemand("page", IsVisible && WindowState != WindowState.Minimized && PageHost.Content is SensorsPage);
         _c.Session.SetSensorDemand("tilt", _c.Tilt.Enabled);

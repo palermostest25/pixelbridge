@@ -17,6 +17,10 @@ public sealed class AppController : IAsyncDisposable
 {
     public BridgeSettings Settings { get; }
     public DeviceSession Session { get; }
+    public PhoneWorkspace Phone { get; }
+    public PhoneCommands Commands { get; }
+    public CompassTracker Compass { get; } = new();
+    public volatile bool CompassVisible;
     public UsbSharing UsbSharing { get; }
     public VideoPipeline Video { get; }
     public AudioPipeline Audio { get; } = new();
@@ -63,6 +67,9 @@ public sealed class AppController : IAsyncDisposable
         Settings = BridgeSettings.Load();
         if (string.IsNullOrEmpty(Settings.ApiToken)) { Settings.ApiToken = SensorApiServer.NewToken(); Settings.Save(); }
         Session = new DeviceSession(Settings);
+        Phone = new PhoneWorkspace(Session);
+        Phone.ConfigureNotifications(Settings.NotificationsEnabled, Settings.NotificationShowContent);
+        Commands = new PhoneCommands(Session);
         UsbSharing = new UsbSharing(Session);
         Session.StateChanged += (s, detail) => { if (s == LinkState.Connected) _ = UsbSharing.RefreshAsync(); };
         Video = new VideoPipeline(Session) { Settings = Settings };
@@ -179,6 +186,8 @@ public sealed class AppController : IAsyncDisposable
     public void SetPrivacy(bool on)
     {
         PrivacyMode = on;
+        Phone.SetEnabled(!on);
+        if (on) Compass.Reset();
         Session.PauseSensors(on);
         if (on)
         {
@@ -267,6 +276,7 @@ public sealed class AppController : IAsyncDisposable
     private void OnSensor(SensorSample s)
     {
         if (PrivacyMode) return;
+        if (CompassVisible) Compass.Accept(s);
         lock (LatestSensors) LatestSensors[s.Type] = s;
         Interlocked.Increment(ref SensorSamples);
         LastSensorUtc = DateTime.UtcNow;

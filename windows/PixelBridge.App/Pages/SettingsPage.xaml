@@ -11,6 +11,12 @@
         <c:SettingCard Header="Connect automatically" Description="Connect as soon as the Pixel is plugged in" Glyph="&#xE71B;">
             <CheckBox x:Name="AutoConnect" Style="{StaticResource ToggleSwitch}" Click="Changed"/>
         </c:SettingCard>
+        <c:SettingCard Header="Show dashboard on USB connection" Description="Bring PixelBridge forward once when the phone is detected" Glyph="&#xE8A7;">
+            <CheckBox x:Name="ShowOnConnect" Style="{StaticResource ToggleSwitch}" Click="Changed"/>
+        </c:SettingCard>
+        <c:SettingCard Header="Update the phone companion automatically" Description="Uses the bundled APK; its signing key must match the installed app" Glyph="&#xE895;">
+            <CheckBox x:Name="AutoUpdateCompanion" Style="{StaticResource ToggleSwitch}" Click="Changed"/>
+        </c:SettingCard>
         <TextBlock Text="Features" Style="{StaticResource SectionTitle}"/>
         <c:SettingCard Header="PixelBridge Camera for Windows apps" Glyph="&#xE714;">
             <CheckBox x:Name="Vcam" Style="{StaticResource ToggleSwitch}" Click="Changed"/>
