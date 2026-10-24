@@ -9,7 +9,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
-import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.LinearLayout
@@ -32,7 +31,6 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(40, 60, 40, 40) }
         root.addView(TextView(this).apply { text = "PixelBridge"; textSize = 28f })
         status = TextView(this).apply { textSize = 14f; setPadding(0, 20, 0, 20) }

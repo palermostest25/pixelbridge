@@ -1,9 +1,12 @@
+import AppKit
 import Combine
 import CoreMedia
 import CoreVideo
 import Foundation
 import PixelBridgeKit
 import SystemExtensions
+import Security
+import SystemConfiguration
 
 struct BleDevice: Identifiable, Hashable {
     var id: String { address }
@@ -30,23 +33,31 @@ struct WifiNetwork: Identifiable, Hashable {
 
 struct SensorPoint: Identifiable { let id: Int; let t: Double; let x: Float, y: Float, z: Float }
 
+@MainActor final class VideoPreviewState: ObservableObject { @Published var buffer: CVPixelBuffer? }
+
 /// All UI state for the macOS app; mirrors windows/PixelBridge.App/AppController.cs.
 @MainActor
 final class AppModel: NSObject, ObservableObject {
     let session = DeviceSession()
     private let decoder = H264Decoder()
     private let sink = CameraSink()
+    private let frameProcessor = VideoFrameProcessor()
     let audio = AudioPlayer()
     private var bag = Set<AnyCancellable>()
 
-    @Published var preview: CVPixelBuffer?
+    let videoPreview = VideoPreviewState()
+    var preview: CVPixelBuffer? { get { videoPreview.buffer } set { videoPreview.buffer = newValue } }
     @Published var fps: Double = 0
-    @Published var cameraOn = false, micOn = false, locationOn = false
+    @Published var savePower = UserDefaults.standard.object(forKey: "savePower") as? Bool ?? true { didSet { UserDefaults.standard.set(savePower, forKey: "savePower"); if cameraOn { startCamera() } } }
+    @Published var cameraOn = false
+    @Published var micOn = false
+    @Published var locationOn = false
     @Published var privacy = false
     @Published var cameraError: String?
     @Published var battery: BatteryStatus?
     @Published var latest: [Int32: SensorSample] = [:]
-    @Published var accel: [SensorPoint] = [], gyro: [SensorPoint] = []
+    @Published var accel: [SensorPoint] = []
+    @Published var gyro: [SensorPoint] = []
     @Published var quaternion: (Float, Float, Float, Float) = (0, 0, 0, 1)
     @Published var location: LocationFix?
     @Published var bleDevices: [BleDevice] = []
@@ -57,20 +68,93 @@ final class AppModel: NSObject, ObservableObject {
     @Published var radioStatus = ""
     @Published var notifications: [(Date, String, String?)] = []
     @Published var extensionState = "Not installed"
+    @Published var webcamName: String?
+    @Published var webcamStatus = ""
+
+    var canInstallCameraExtension: Bool {
+        guard let task = SecTaskCreateFromSelf(nil),
+              let allowed = SecTaskCopyValueForEntitlement(task, "com.apple.developer.system-extension.install" as CFString, nil) as? Bool,
+              allowed else { return false }
+        return FileManager.default.fileExists(atPath: Bundle.main.bundlePath + "/Contents/Library/SystemExtensions/dev.pixelbridge.PixelBridgeCamera.systemextension")
+    }
+
+    func refreshWebcamOutput() {
+        webcamName = CameraSink.availableOutputName()
+        webcamStatus = webcamName == nil ? "A signed camera extension is required. Install and enable OBS Virtual Camera, then refresh." : "Ready. Start the camera to send video."
+    }
     @Published var tetherInterface: String?
     @Published var micLevel: Double = -120
+
+    @Published var cameras: [PhoneCamera] = []
+    @Published var zoomRatio = UserDefaults.standard.double(forKey: "cameraZoom") == 0 ? 1 : UserDefaults.standard.double(forKey: "cameraZoom")
+    @Published var stabilization = UserDefaults.standard.string(forKey: "cameraStabilization") ?? "auto"
+    @Published var orientationMode = UserDefaults.standard.string(forKey: "cameraOrientation") ?? "auto"
+    @Published var mirrorCamera = UserDefaults.standard.bool(forKey: "cameraMirror")
+    @Published var appliedOptical: Bool?
+    @Published var appliedElectronic: Bool?
+    @Published var appliedZoom: Double?
+    @Published var usbSharingEnabled = false
+    @Published var tetherBusy = false
+    private var tetherStatusQueryBusy = false
+    @Published var tetherMessage = ""
+    private var automaticRotation = 0
+    private var cameraControlTask: Task<Void, Never>?
+
+    var currentCamera: PhoneCamera? { cameras.first { $0.id == session.settings.cameraId } }
+    var cameraLenses: [CameraLens] {
+        cameras.flatMap { camera -> [CameraLens] in
+            if camera.facing == "front" { return [CameraLens(cameraID: camera.id, kind: "front", title: "Front", symbol: "person.crop.rectangle", zoom: 1)] }
+            var lenses: [CameraLens] = []
+            if camera.minimumZoom < 0.95 {
+                lenses.append(CameraLens(cameraID: camera.id, kind: "ultra", title: "Ultra wide", symbol: "camera.viewfinder", zoom: camera.minimumZoom))
+            }
+            lenses.append(CameraLens(cameraID: camera.id, kind: "wide", title: "Wide", symbol: "camera.aperture", zoom: 1))
+            return lenses
+        }
+    }
+    var selectedLensID: String {
+        session.settings.cameraId + "-" + (currentCamera?.facing == "front" ? "front" : zoomRatio < 0.95 ? "ultra" : "wide")
+    }
+    var stabilizationStatus: String {
+        if !cameraOn { return "Applies when the camera starts" }
+        if appliedOptical == true { return "Optical stabilization active" }
+        if appliedElectronic == true { return "Electronic stabilization active" }
+        if appliedOptical != nil { return "Stabilization off" }
+        return "Waiting for camera confirmation…"
+    }
 
     private var frameCount = 0, lastFpsTick = Date()
     private var sampleIndex = 0
     private var lastPreview = Date.distantPast
+    var sensorsVisible = false { didSet { updateSensorDemand() } }
+    var cameraVisible = false
+    private var sensorUIUpdates: [Int32: Date] = [:]
+    private var windowVisible: Bool { NSApplication.shared.windows.contains { $0.title == "PixelBridge" && $0.isVisible && !$0.isMiniaturized && $0.occlusionState.contains(.visible) } }
+    func updateSensorDemand() {
+        if sensorsVisible && windowVisible && !privacy { session.startStream("sensors", ["rateHz": session.settings.sensorRateHz]) }
+        else { session.stopStream("sensors") }
+    }
 
     override init() {
         super.init()
+        refreshWebcamOutput()
         decoder.onFrame = { [weak self] pb, pts in
             Task { @MainActor in self?.onDecoded(pb, pts) }
         }
+        session.$capabilities.sink { [weak self] capabilities in
+            guard let self else { return }
+            self.cameras = (capabilities["cameras"] as? [[String: Any]] ?? []).compactMap(PhoneCamera.init)
+            if let camera = self.currentCamera { self.zoomRatio = min(camera.maximumZoom, max(camera.minimumZoom, self.zoomRatio)) }
+        }.store(in: &bag)
+        session.videoConfig.sink { [weak self] config in
+            guard let self, config["cameraId"] as? String == self.session.settings.cameraId else { return }
+            if let rotation = config["rotationDegrees"] as? Int { self.automaticRotation = rotation }
+            self.appliedOptical = config["opticalStabilizationActive"] as? Bool
+            self.appliedElectronic = config["videoStabilizationActive"] as? Bool
+            self.appliedZoom = (config["appliedZoomRatio"] as? NSNumber)?.doubleValue
+        }.store(in: &bag)
         session.videoFrame.sink { [weak self] f in self?.decoder.decode(f.payload, timestampNs: f.timestampNs) }.store(in: &bag)
-        session.audioFrame.sink { [weak self] f in self?.audio.push(f.payload); self?.micLevel = self?.audio.levelDbfs ?? -120 }.store(in: &bag)
+        session.audioFrame.sink { [weak self] f in guard let self, self.micOn, !self.privacy else { return }; self.audio.push(f.payload); self.micLevel = self.audio.levelDbfs }.store(in: &bag)
         session.battery.sink { [weak self] b in self?.battery = b }.store(in: &bag)
         session.location.sink { [weak self] l in if self?.privacy == false { self?.location = l } }.store(in: &bag)
         session.sensor.sink { [weak self] s in self?.onSensor(s) }.store(in: &bag)
@@ -85,13 +169,15 @@ final class AppModel: NSObject, ObservableObject {
         session.$state.sink { [weak self] s in
             guard let self else { return }
             if s == .connected {
+                self.refreshUSBSharing()
+                self.updateSensorDemand()
                 if self.cameraOn { self.startCamera() }
                 if self.micOn { self.startMic() }
                 if self.locationOn { self.startLocation() }
             } else { self.preview = nil; self.sink.detach() }
         }.store(in: &bag)
         session.start()
-        Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in Task { @MainActor in self?.refreshTether() } }
+        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in Task { @MainActor in self?.refreshTether() } }
         refreshTether()
     }
 
@@ -100,13 +186,75 @@ final class AppModel: NSObject, ObservableObject {
     func startCamera() {
         guard !privacy else { return }
         cameraOn = true; cameraError = nil
+        appliedOptical = nil; appliedElectronic = nil; appliedZoom = nil
+        fps = 0; frameCount = 0; lastFpsTick = Date()
         let s = session.settings
-        session.startStream("video", ["cameraId": s.cameraId, "width": s.videoWidth, "height": s.videoHeight, "fps": s.videoFps, "bitrate": s.videoBitrate])
+        session.startStream("video", ["cameraId": s.cameraId, "width": s.videoWidth, "height": s.videoHeight, "fps": savePower ? min(15, s.videoFps) : s.videoFps, "bitrate": s.videoBitrate, "zoomRatio": zoomRatio, "stabilization": stabilization])
     }
 
-    func stopCamera() { cameraOn = false; session.stopStream("video"); preview = nil }
+    func stopCamera() { cameraOn = false; session.stopStream("video"); preview = nil; sink.detach(); refreshWebcamOutput() }
 
-    func switchCamera(_ id: String) { session.settings.cameraId = id; session.settings.save(); if cameraOn { startCamera() } }
+    func selectCameraLens(_ lens: CameraLens) {
+        let changedCamera = session.settings.cameraId != lens.cameraID
+        session.settings.cameraId = lens.cameraID; session.settings.save()
+        zoomRatio = lens.zoom
+        if stabilization == "optical" && (lens.kind == "ultra" || currentCamera?.supportsOptical != true) { stabilization = "auto" }
+        saveCameraControls()
+        if cameraOn {
+            if changedCamera { preview = nil; decoder.invalidate(); startCamera() }
+            else { sendCameraControls() }
+        }
+    }
+    func setCameraZoom(_ value: Double) {
+        guard value.isFinite, let camera = currentCamera else { return }
+        zoomRatio = min(camera.maximumZoom, max(camera.minimumZoom, value))
+        saveCameraControls()
+        cameraControlTask?.cancel()
+        cameraControlTask = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: 80_000_000) } catch { return }
+            self?.sendCameraControls()
+        }
+    }
+    func sendCameraControls() {
+        saveCameraControls()
+        guard cameraOn, session.isConnected, !privacy else { return }
+        session.startStream("video", ["updateOnly": true, "zoomRatio": zoomRatio, "stabilization": stabilization])
+    }
+    func saveCameraControls() {
+        let defaults = UserDefaults.standard
+        defaults.set(zoomRatio, forKey: "cameraZoom")
+        defaults.set(stabilization, forKey: "cameraStabilization")
+        defaults.set(orientationMode, forKey: "cameraOrientation")
+        defaults.set(mirrorCamera, forKey: "cameraMirror")
+    }
+    func refreshUSBSharing() {
+        guard !tetherBusy, !tetherStatusQueryBusy, let adb = session.adb, !session.serial.isEmpty else { return }
+        tetherStatusQueryBusy = true
+        let serial = session.serial
+        Task {
+            defer { tetherStatusQueryBusy = false }
+            let result = await adb.shell(serial, "svc usb getFunctions", timeout: 5)
+            if result.ok && !tetherBusy { usbSharingEnabled = (result.stdout + result.stderr).contains("ncm") || (result.stdout + result.stderr).contains("rndis") }
+        }
+    }
+    func setInternetSharing(_ enabled: Bool) {
+        guard !tetherBusy, let adb = session.adb, !session.serial.isEmpty else { return }
+        tetherBusy = true
+        tetherMessage = enabled ? "Enabling USB internet sharing…" : "Disabling USB internet sharing…"
+        let serial = session.serial
+        Task {
+            _ = await adb.shell(serial, "svc usb setFunctions \(enabled ? "ncm" : "mtp")", timeout: 8)
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            let check = await adb.shell(serial, "svc usb getFunctions", timeout: 10)
+            refreshTether()
+            if check.ok {
+                let active = (check.stdout + check.stderr).contains("ncm") || (check.stdout + check.stderr).contains("rndis")
+                usbSharingEnabled = active
+                tetherMessage = active == enabled ? (enabled ? "USB internet sharing enabled" : "USB internet sharing disabled") : "The phone did not change USB mode. Try again."
+            } else { tetherMessage = "Could not confirm USB mode. Reconnect the phone and try again." }
+            tetherBusy = false
+        }
+    }
 
     func startMic() { guard !privacy else { return }; micOn = true; session.startStream("audio", ["rateHz": 48000]) }
     func stopMic() { micOn = false; session.stopStream("audio") }
@@ -118,24 +266,32 @@ final class AppModel: NSObject, ObservableObject {
         privacy = on
         if on {
             ["video", "audio", "sensors", "location"].forEach { session.stopStream($0) }
-            preview = nil; location = nil
+            preview = nil; location = nil; sink.detach()
         } else {
-            session.startStream("sensors", ["rateHz": session.settings.sensorRateHz])
+            updateSensorDemand()
             if cameraOn { startCamera() }; if micOn { startMic() }; if locationOn { startLocation() }
         }
     }
 
     private func onDecoded(_ pb: CVPixelBuffer, _ pts: CMTime) {
         guard cameraOn, !privacy else { return }
-        sink.send(pb, pts: pts)
+        let rotation = orientationMode == "auto" ? automaticRotation : Int(orientationMode) ?? 0
+        guard let processed = frameProcessor.process(pb, rotation: rotation, mirrored: mirrorCamera) else { return }
+        sink.send(processed, pts: pts)
+        let outputStatus = sink.lastError ?? (sink.framesSent > 0 && sink.isAttached ? "Sending live video." : "Preparing webcam output…")
+        if webcamStatus != outputStatus { webcamStatus = outputStatus }
+        if let name = sink.outputName, webcamName != name { webcamName = name }
         frameCount += 1
         let now = Date()
         if now.timeIntervalSince(lastFpsTick) >= 1 { fps = Double(frameCount) / now.timeIntervalSince(lastFpsTick); frameCount = 0; lastFpsTick = now }
-        if now.timeIntervalSince(lastPreview) > 1.0 / 30 { preview = pb; lastPreview = now }
+        if cameraVisible && windowVisible && now.timeIntervalSince(lastPreview) > 1.0 / 15 { preview = processed; lastPreview = now }
     }
 
     private func onSensor(_ s: SensorSample) {
-        guard !privacy else { return }
+        guard !privacy, sensorsVisible, windowVisible else { return }
+        let now = Date()
+        guard now.timeIntervalSince(sensorUIUpdates[s.type] ?? .distantPast) >= 1.0 / 15 else { return }
+        sensorUIUpdates[s.type] = now
         latest[s.type] = s
         sampleIndex += 1
         let t = Double(s.timestampNs) / 1e9
@@ -258,21 +414,74 @@ final class AppModel: NSObject, ObservableObject {
     // MARK: USB tethering (read-only): macOS shows an NCM tether as an Ethernet-like interface.
 
     func refreshTether() {
+        refreshUSBSharing()
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/sbin/networksetup")
         p.arguments = ["-listallhardwareports"]
         let pipe = Pipe(); p.standardOutput = pipe
         try? p.run(); p.waitUntilExit()
         let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        // Blocks look like "Hardware Port: Pixel 7\nDevice: en9\n…"; match the phone or generic NCM names.
+        // Hardware-port entries persist after unplugging. Require a live link and IPv4 address.
         let blocks = out.components(separatedBy: "\n\n")
-        tetherInterface = blocks.first { $0.localizedCaseInsensitiveContains("Pixel") || $0.localizedCaseInsensitiveContains("NCM") || $0.localizedCaseInsensitiveContains("Android") }?
-            .components(separatedBy: "\n").first { $0.hasPrefix("Hardware Port:") }?.replacingOccurrences(of: "Hardware Port: ", with: "")
+        let store = SCDynamicStoreCreate(nil, "PixelBridge" as CFString, nil, nil)
+        tetherInterface = blocks.compactMap { block -> String? in
+            guard block.localizedCaseInsensitiveContains("Pixel") || block.localizedCaseInsensitiveContains("NCM") || block.localizedCaseInsensitiveContains("Android"),
+                  let interface = block.components(separatedBy: "\n").first(where: { $0.hasPrefix("Device: ") })?.replacingOccurrences(of: "Device: ", with: ""),
+                  let link = SCDynamicStoreCopyValue(store, "State:/Network/Interface/\(interface)/Link" as CFString) as? [String: Any],
+                  link["Active"] as? Bool == true,
+                  let ipv4 = SCDynamicStoreCopyValue(store, "State:/Network/Interface/\(interface)/IPv4" as CFString) as? [String: Any],
+                  let addresses = ipv4["Addresses"] as? [String],
+                  addresses.contains(where: { !$0.hasPrefix("169.254.") && $0 != "0.0.0.0" }) else { return nil }
+            return interface
+        }.first
+    }
+
+    @Published var phoneScreenStatus = ""
+    private var phoneScreenProcess: Process?
+    func openPhoneScreen() {
+        if let process = phoneScreenProcess, process.isRunning {
+            NSRunningApplication(processIdentifier: process.processIdentifier)?.activate(options: [.activateAllWindows])
+            return
+        }
+        guard let executable = ["/opt/homebrew/bin/scrcpy", "/usr/local/bin/scrcpy"].first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
+            phoneScreenStatus = "Phone-screen support is missing. Install scrcpy, then try again."
+            return
+        }
+        guard !session.serial.isEmpty, let adb = session.adb else {
+            phoneScreenStatus = "Connect and authorize the phone first."
+            return
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = ["-s", session.serial, "--no-audio", "--force-adb-forward", "--max-size=1280", "--max-fps=15", "--turn-screen-off", "--verbosity=warn", "--window-title", "PixelBridge phone"]
+        var environment = ProcessInfo.processInfo.environment
+        environment["ADB"] = adb.path
+        environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (environment["PATH"] ?? "/usr/bin:/bin")
+        process.environment = environment
+        let errors = Pipe()
+        process.standardError = errors
+        process.standardOutput = FileHandle.nullDevice
+        process.terminationHandler = { [weak self] ended in
+            let detail = String(decoding: errors.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            Task { @MainActor in
+                self?.phoneScreenStatus = ended.terminationStatus == 0 ? "Phone screen closed." : "Phone screen could not open. " + (detail.isEmpty ? "Check the USB connection and try again." : String(detail.suffix(700)))
+                self?.phoneScreenProcess = nil
+            }
+        }
+        do {
+            try process.run()
+            phoneScreenProcess = process
+            phoneScreenStatus = "Phone screen opened in a separate window."
+        } catch { phoneScreenStatus = "Could not launch the phone screen: \(error.localizedDescription)" }
     }
 
     // MARK: camera extension install (user approves in System Settings › Privacy & Security)
 
     func installCameraExtension() {
+        guard canInstallCameraExtension else {
+            extensionState = "This build cannot install a webcam extension. Use the installed OBS Virtual Camera output."
+            return
+        }
         let req = OSSystemExtensionRequest.activationRequest(forExtensionWithIdentifier: "dev.pixelbridge.PixelBridgeCamera", queue: .main)
         req.delegate = self
         OSSystemExtensionManager.shared.submitRequest(req)

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>PixelBridge</string>
+	<key>CFBundleExecutable</key>
+	<string>PixelBridge</string>
+	<key>CFBundleIconFile</key>
+	<string>PixelBridge</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.pixelbridge.PixelBridge</string>
+	<key>CFBundleName</key>
+	<string>PixelBridge</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.3.0</string>
+	<key>CFBundleVersion</key>
+	<string>5</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSCameraUsageDescription</key>
+	<string>PixelBridge shows the camera feed from your connected Android phone.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>PixelBridge receives audio from your connected Android phone.</string>
+</dict>
+</plist>

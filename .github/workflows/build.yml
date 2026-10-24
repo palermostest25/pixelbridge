@@ -1,0 +1,149 @@
+name: Build and verify
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - run: sdkmanager 'platforms;android-37.0' 'build-tools;37.0.0'
+      - run: bash ./gradlew assembleDebug testDebugUnitTest --no-daemon --console=plain
+        working-directory: android
+      - run: mkdir -p artifacts && cp android/app/build/outputs/apk/debug/app-debug.apk artifacts/PixelBridge-Android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phone-app
+          path: artifacts/PixelBridge-Android.apk
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-test-results
+          path: android/app/build/test-results
+  windows:
+    runs-on: windows-2025
+    needs: android
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: phone-app
+          path: artifacts/android
+      - shell: pwsh
+        run: |
+          Copy-Item artifacts/android/PixelBridge-Android.apk artifacts/android/PixelBridge-debug.apk
+          ./BUILD_ALL.ps1 -SkipAndroid -PlatformToolset v143
+      - name: Exercise native virtual camera
+        shell: pwsh
+        run: |
+          & ./windows/native-bin/Release/PixelBridge.VCamTest.exe inproc "$pwd/windows/native-bin/Release/PixelBridge.VirtualCam.dll" 3 "$pwd/artifacts/tests/virtual-camera.bmp"
+          if ($LASTEXITCODE -ne 0) { throw 'Virtual camera smoke test failed' }
+      - name: Render Windows interface
+        shell: pwsh
+        run: |
+          $p = Start-Process artifacts/windows/PixelBridge/PixelBridge.exe -ArgumentList '--render-pages', "$pwd/artifacts/ui" -PassThru
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); throw 'UI render timed out' }
+          if ((Get-ChildItem artifacts/ui/*.png).Count -ne 11) { throw 'Missing Windows page renders' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-package
+          path: |
+            artifacts/windows/PixelBridge-Setup.zip
+            artifacts/windows/PixelBridge-Setup.zip.sha256
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-verification
+          path: |
+            artifacts/tests
+            artifacts/ui
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Install Linux media and display dependencies
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v Xvfb >/dev/null; then
+            sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update
+            sudo apt-get -y -o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 install ffmpeg xvfb libice6 libsm6 libfontconfig1
+          fi
+      - run: dotnet test windows/PixelBridge.Tests -c Release --logger trx
+      - run: dotnet run --project linux/PixelBridge.MediaSmoke -c Release
+      - run: dotnet publish linux/PixelBridge.Linux -c Release -r linux-x64 --self-contained true -o artifacts/linux/app
+      - run: timeout 90s xvfb-run -a artifacts/linux/app/pixelbridge --render-pages artifacts/ui
+      - run: test "$(find artifacts/ui -name '*.png' | wc -l)" -eq 9
+      - run: |
+          cp linux/install.sh README.md artifacts/linux/
+          chmod +x artifacts/linux/install.sh artifacts/linux/app/pixelbridge
+          tar -C artifacts/linux -czf artifacts/PixelBridge-Linux-x64.tar.gz .
+          cd artifacts && sha256sum PixelBridge-Linux-x64.tar.gz > PixelBridge-Linux-x64.tar.gz.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-package
+          path: artifacts/PixelBridge-Linux-x64.tar.gz*
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-verification
+          path: |
+            artifacts/ui
+            windows/PixelBridge.Tests/TestResults
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test --package-path macos
+      - run: bash macos/build-local.sh
+      - name: Check image geometry and connection recovery
+        run: |
+          swiftc -O macos/App/Media/VideoFrameProcessor.swift macos/Tests/FrameGeometry/Geometry.swift -o /tmp/geometry
+          /tmp/geometry
+          swiftc -parse-as-library -I macos/.build/local-app -L macos/.build/local-app -lPixelBridgeKit macos/Tests/ConnectionSmoke/ConnectionSmoke.swift -o /tmp/connection
+          /tmp/connection
+      - run: mkdir -p artifacts && ditto -c -k --sequesterRsrc --keepParent macos/.build/local-app/PixelBridge.app artifacts/PixelBridge-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-package
+          path: artifacts/PixelBridge-macOS.zip
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [android, windows, linux, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-package'
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: phone-app
+          path: dist
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "PixelBridge $GITHUB_REF_NAME" --generate-notes

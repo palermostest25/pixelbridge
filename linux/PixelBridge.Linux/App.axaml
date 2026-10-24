@@ -73,6 +73,8 @@
                 <TrayIcon.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="Show PixelBridge" Click="Show_Click"/>
+                        <NativeMenuItem Header="USB internet sharing" ToggleType="CheckBox" Click="Sharing_Click"/>
+                        <NativeMenuItem Header="Save power (15 fps)" ToggleType="CheckBox" Click="Power_Click"/>
                         <NativeMenuItem Header="Privacy mode" Click="Privacy_Click"/>
                         <NativeMenuItemSeparator/>
                         <NativeMenuItem Header="Quit" Click="Quit_Click"/>

@@ -1,4 +1,8 @@
 artifacts/
+macos/.build/
+*.keystore
+*.jks
+adbkey*
 **/build/
 **/.gradle/
 local.properties

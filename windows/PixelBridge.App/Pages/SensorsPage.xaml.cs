@@ -15,6 +15,7 @@ public partial class SensorsPage : UserControl, IPage
     private readonly QuaternionRotation3D _rotation = new();
     private readonly DispatcherTimer _plotTimer;
     private bool _loading = true;
+    private volatile bool _receiving;
 
     public SensorsPage(AppController c)
     {
@@ -24,10 +25,10 @@ public partial class SensorsPage : UserControl, IPage
         Rate.SelectedIndex = c.Settings.SensorRateHz <= 5 ? 0 : c.Settings.SensorRateHz >= 100 ? 2 : 1;
         Osc.IsChecked = c.Settings.OscEnabled;
         ApiUrl.Text = $"ws://127.0.0.1:{c.Settings.SensorWebSocketPort}/sensors?token={c.Settings.ApiToken}";
-        c.SensorReceived += s => { if (_queue.Count < 4000) _queue.Enqueue(s); };
+        c.SensorReceived += s => { if (_receiving && _queue.Count < 4000) _queue.Enqueue(s); };
         _plotTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(33), DispatcherPriority.Render, (_, _) => Drain(), Dispatcher);
-        Loaded += (_, _) => _plotTimer.Start();
-        Unloaded += (_, _) => { _plotTimer.Stop(); _queue.Clear(); };
+        Loaded += (_, _) => { _receiving = true; _plotTimer.Start(); };
+        Unloaded += (_, _) => { _receiving = false; _plotTimer.Stop(); _queue.Clear(); };
         _loading = false;
     }
 
@@ -128,7 +129,7 @@ public partial class SensorsPage : UserControl, IPage
         _c.Tilt.Enabled = Tilt.IsChecked == true;
     }
 
-    private void Osc_Click(object sender, RoutedEventArgs e) { _c.Settings.OscEnabled = Osc.IsChecked == true; _c.Settings.Save(); }
+    private void Osc_Click(object sender, RoutedEventArgs e) { _c.SetOsc(Osc.IsChecked == true); }
 
     private void CopyApi_Click(object sender, RoutedEventArgs e) { Clipboard.SetText(ApiUrl.Text); MainWindow.Current?.ShowToast("API URL copied."); }
 }

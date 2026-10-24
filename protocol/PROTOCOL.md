@@ -101,7 +101,13 @@ After `AUTH_OK` on control the device sends `CAPABILITIES`:
 `START_STREAM` kinds and options:
 
 * `sensors` `{rateHz:5|50|100}`, which also starts `BATTERY_STATUS`
-* `video` `{cameraId:"0", width:1280, height:720, fps:30, bitrate:4000000}`
+* `video` `{cameraId:"0", width:1280, height:720, fps:30, bitrate:4000000, zoomRatio:1.0, stabilization:"auto"}`
+  Optional camera controls default to `zoomRatio:1.0` and `stabilization:"auto"`.
+  Stabilization accepts `auto`, `optical`, `electronic`, or `off`; unsupported modes are never enabled.
+  Auto requests OIS on the main rear lens and electronic stabilization when OIS is unavailable (including ultrawide).
+  `video` with `{updateOnly:true, zoomRatio, stabilization}` changes the repeating capture request without restarting the encoder.
+  `CAPABILITIES.cameras[]` additionally reports `minZoom`, `maxZoom`, `opticalStabilization`, `videoStabilization`, and `physicalIds`.
+  Zoom below 1× on a logical rear camera selects its wider physical lens where supported.
 * `audio` `{rateHz:48000}`
 
 `HEARTBEAT` every 1 s; device answers `PONG` with `deviceNs = elapsedRealtimeNanos`. The host
@@ -125,6 +131,12 @@ Host treats 5 s without PONG as link loss.
 ## 6. Video
 
 `VIDEO_CONFIG` `{codec:"h264", width, height, fps, bitrate, cameraId, facing, sensorOrientation, timestampSource:"boottime"}`
+
+Optional live camera metadata: `zoomRatio`, `stabilization`, `rotationDegrees` (clockwise rotation needed for upright output),
+`deviceOrientation`, `appliedZoomRatio`, `opticalStabilizationActive`, `videoStabilizationActive`, and `activePhysicalCameraId`.
+Applied values come from Camera2 capture results. This config is refreshed after control/orientation changes and once per second.
+Hosts must tolerate additional fields. PixelBridge for macOS applies rotation and mirroring before both preview and webcam output;
+portrait content is fitted into the 16:9 output without stretching or discarding the field of view.
 is sent before the first frame and on every reconfiguration. The first `VIDEO_FRAME` carries flag
 `CODEC_CONFIG` (SPS+PPS, Annex-B). Frames with flag `KEYFRAME` are IDR. Timestamps are codec
 presentation times converted to the device `elapsedRealtimeNanos` (boottime) clock. The device drops non-keyframes when its 8-frame queue is full and then

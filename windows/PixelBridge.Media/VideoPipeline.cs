@@ -18,6 +18,8 @@ public sealed class VideoPipeline : IDisposable
     private readonly Thread _thread;
     private readonly CancellationTokenSource _cts = new();
     private H264Decoder? _decoder;
+    private readonly VideoGeometry _geometry = new();
+    public BridgeSettings Settings { get; set; } = new();
     private bool _waitingForKeyframe = true;
     private long _framesIn, _framesDecoded, _framesDropped, _bytesIn;
     private readonly Stopwatch _rateWatch = Stopwatch.StartNew();
@@ -28,6 +30,7 @@ public sealed class VideoPipeline : IDisposable
     public JsonObject? Config { get; private set; }
     public Nv12Frame? Latest { get; private set; }
     public bool Paused { get; set; }
+    public volatile bool Enabled;
     public double Fps { get; private set; }
     public double BitrateMbps { get; private set; }
     public long FramesDropped => _framesDropped;
@@ -51,12 +54,13 @@ public sealed class VideoPipeline : IDisposable
 
     private void OnConfig(JsonObject cfg)
     {
+        if (CameraControls.FormatChanged(Config, cfg)) _waitingForKeyframe = true;
         Config = cfg;
-        _waitingForKeyframe = true;
     }
 
     private void OnFrame(Frame f)
     {
+        if (!Enabled) return;
         Interlocked.Increment(ref _framesIn);
         Interlocked.Add(ref _bytesIn, f.Payload.Length);
         if (!_queue.TryAdd(f))
@@ -90,6 +94,7 @@ public sealed class VideoPipeline : IDisposable
 
     private void Process(Frame f)
     {
+        if (!Enabled) return;
         {
             {
                 _decoder ??= new H264Decoder();
@@ -105,6 +110,8 @@ public sealed class VideoPipeline : IDisposable
                 TrackLatency(f.TimestampNs);
                 UpdateRates(f.Payload.Length);
                 if (Paused) return;
+                nv = new Nv12Frame(nv.Width, nv.Height, _geometry.Transform(nv.Data, nv.Width, nv.Height, CameraControls.Rotation(Settings, Config), Settings.PreviewMirror), nv.TimestampNs);
+                if (!Enabled) return;
                 Latest = nv;
                 Feed.Write(nv);
                 FrameDecoded?.Invoke(nv);
@@ -142,6 +149,7 @@ public sealed class VideoPipeline : IDisposable
     /// <summary>Stop showing video: the virtual camera switches to its placeholder, never a stale frame.</summary>
     public void GoOffline(bool paused = false)
     {
+        Enabled = false;
         Feed.SetState(paused ? VirtualCamFeed.FeedState.Paused : VirtualCamFeed.FeedState.Offline);
         Latest = null;
         Fps = 0; BitrateMbps = 0;

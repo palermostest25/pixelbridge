@@ -19,8 +19,12 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _timer;
     private WriteableBitmap? _bitmap;
     private int _busy;
+    private volatile bool _previewVisible;
     private bool _allowClose;
     private int _tetherCountdown;
+    private bool _loadingCamera = true;
+    private string _lensSignature = "";
+    private DispatcherTimer? _zoomTimer;
     private readonly Dictionary<string, (TextBlock state, Border icon)> _tiles = new();
 
     public MainWindow() : this(new AppModel()) { }
@@ -32,7 +36,13 @@ public partial class MainWindow : Window
         foreach (var (key, title) in new[] { ("camera", "Camera"), ("mic", "Microphone"), ("network", "Internet sharing"), ("location", "Location"), ("bluetooth", "Bluetooth"), ("sensors", "Motion sensors") })
             AddTile(key, title);
         Nav.SelectedIndex = 0;
-        (m.Settings.CameraId == "1" ? Front : Rear).IsChecked = true;
+        Stabilization.SelectedIndex = Math.Max(0, Array.IndexOf(new[] { "auto", "optical", "electronic", "off" }, m.Settings.CameraStabilization));
+        Orientation.SelectedIndex = Math.Max(0, Array.IndexOf(new[] { "auto", "0", "90", "180", "270" }, m.Settings.CameraOrientation));
+        Mirror.IsChecked = m.Settings.PreviewMirror; SavePower.IsChecked = m.Settings.SavePower;
+        _zoomTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+        _zoomTimer.Tick += (_, _) => { _zoomTimer.Stop(); _m.UpdateCameraControls(); };
+        Zoom.PropertyChanged += (_, e) => { if (!_loadingCamera && e.Property == Slider.ValueProperty) { _m.Settings.CameraZoom = Zoom.Value; _zoomTimer.Stop(); _zoomTimer.Start(); } };
+        _loadingCamera = false;
         SerialBox.Text = m.Settings.TargetSerial;
         AutoConnect.IsChecked = m.Settings.AutoConnect;
         Autostart.IsChecked = File.Exists(AutostartPath);
@@ -87,7 +97,7 @@ public partial class MainWindow : Window
 
     private void OnPreview(byte[] bgra, int w, int h)
     {
-        if (_page != "camera" || Interlocked.Exchange(ref _busy, 1) == 1) return;
+        if (!_previewVisible || Interlocked.Exchange(ref _busy, 1) == 1) return;
         Dispatcher.UIThread.Post(() =>
         {
             try
@@ -106,6 +116,9 @@ public partial class MainWindow : Window
 
     private void Tick()
     {
+        _previewVisible = IsVisible && WindowState != WindowState.Minimized && _page == "camera";
+        _m.Session.SetSensorDemand("page", IsVisible && WindowState != WindowState.Minimized && _page == "sensors");
+        if (!IsVisible || WindowState == WindowState.Minimized) return;
         var s = _m.Session;
         bool on = s.IsConnected;
         StatusDot.Fill = on ? Brush("PbSuccess") : s.State == LinkState.Connecting ? Brush("PbCaution") : Brushes.Gray;
@@ -147,6 +160,18 @@ public partial class MainWindow : Window
         LinkPorts.Text = string.Join("\n", s.PortMap.Select(kv => $"{kv.Key,-10} 127.0.0.1:{kv.Value}"));
 
         // Camera
+        var controls = _m.Camera;
+        var signature = string.Join("|", controls.Lenses.Select(l => $"{l.CameraId}:{l.Title}:{l.Zoom}"));
+        if (_lensSignature != signature)
+        {
+            _loadingCamera = true; _lensSignature = signature; Lens.ItemsSource = controls.Lenses;
+            Lens.SelectedItem = controls.Lenses.FirstOrDefault(l => l.CameraId == _m.Settings.CameraId && (l.Title == "Ultra wide") == (_m.Settings.CameraZoom < .95)) ?? controls.Lenses.FirstOrDefault();
+            Zoom.Minimum = controls.Current?.MinZoom ?? 1; Zoom.Maximum = controls.Current?.MaxZoom ?? 1; Zoom.Value = _m.Settings.CameraZoom; _loadingCamera = false;
+        }
+        ZoomText.Text = $"{_m.Settings.CameraZoom:0.00}×";
+        Optical.IsEnabled = controls.Current?.Optical == true && _m.Settings.CameraZoom >= 1;
+        Electronic.IsEnabled = controls.Current?.Electronic == true;
+        StabilizationState.Text = CameraControls.StabilizationStatus(_m.VideoConfig);
         if (!_m.Video.IsLive && _bitmap != null) { Preview.Source = null; _bitmap = null; } // never a stale frame
         PreviewText.IsVisible = !_m.Video.IsLive;
         PreviewText.Text = _m.Privacy ? "Privacy mode is on" : !on ? "Phone not connected" : _m.CameraError ?? (_m.CameraOn ? "Starting camera…" : "Camera is off");
@@ -240,7 +265,24 @@ public partial class MainWindow : Window
     }
 
     private void Cam_Click(object? s, RoutedEventArgs e) { if (_m.CameraOn) _m.StopCamera(); else _m.StartCamera(); }
-    private void CamSel_Click(object? s, RoutedEventArgs e) => _m.SwitchCamera((string)((Control)s!).Tag!);
+    private void Lens_Changed(object? s, SelectionChangedEventArgs e)
+    {
+        if (_loadingCamera || Lens.SelectedItem is not CameraLens lens) return;
+        _m.SelectLens(lens); _loadingCamera = true;
+        Zoom.Minimum = _m.Camera.Current?.MinZoom ?? 1; Zoom.Maximum = _m.Camera.Current?.MaxZoom ?? 1; Zoom.Value = _m.Settings.CameraZoom; _loadingCamera = false;
+    }
+    private void CameraControls_Changed(object? s, SelectionChangedEventArgs e) => ApplyCameraControls();
+    private void CameraControls_Click(object? s, RoutedEventArgs e) => ApplyCameraControls();
+    private void ApplyCameraControls()
+    {
+        if (_loadingCamera) return;
+        _m.Settings.CameraStabilization = (string?)((ComboBoxItem?)Stabilization.SelectedItem)?.Tag ?? "auto";
+        _m.Settings.CameraOrientation = (string?)((ComboBoxItem?)Orientation.SelectedItem)?.Tag ?? "auto";
+        _m.Settings.PreviewMirror = Mirror.IsChecked == true;
+        _m.UpdateCameraControls();
+    }
+    private void Power_Click(object? s, RoutedEventArgs e) { _m.Settings.SavePower = SavePower.IsChecked == true; _m.Settings.Save(); if (_m.CameraOn) _m.StartCamera(); }
+
 
     private async void SetupCam_Click(object? s, RoutedEventArgs e)
     {
