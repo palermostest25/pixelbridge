@@ -4,6 +4,39 @@ using PixelBridge.Core;
 public class PhoneWorkspaceTests
 {
     private static JsonObject Ok(JsonObject result)=>new(){["ok"]=true,["result"]=result};
+    [Fact] public void CallControlsFollowConfirmedPhoneStateAndClearForPrivacy()
+    {
+        var model = new PhoneWorkspace((_, _) => Task.FromResult(Ok(new())));
+        model.OnEvent(JsonNode.Parse("""{"event":"phone.calls","muted":true,"route":"bluetooth","canAddCall":true,"calls":[{"id":"call-a","state":"active","canHold":true,"canMerge":true,"canSwap":false}],"endpoints":[{"id":"mac-endpoint","name":"My Mac","route":"bluetooth","selected":true}]}""")!.AsObject());
+        Assert.True(model.Muted); Assert.True(model.CanAddCall);
+        Assert.True(Assert.Single(model.Calls).CanMerge);
+        var endpoint = Assert.Single(model.Endpoints);
+        Assert.Equal("mac-endpoint", endpoint.Id); Assert.True(endpoint.Selected);
+        model.SetEnabled(false);
+        Assert.Empty(model.Calls); Assert.Empty(model.Endpoints); Assert.False(model.Muted); Assert.False(model.CanAddCall);
+        model.OnEvent(JsonNode.Parse("""{"event":"phone.calls","muted":true,"calls":[{"id":"late-call"}]}""")!.AsObject());
+        Assert.Empty(model.Calls); Assert.False(model.Muted);
+    }
+    [Fact] public async Task CallsUseSelectedSimAndExactEndpointWithoutOptimisticMute()
+    {
+        var sent = new List<(string Op, JsonObject Args)>();
+        var model = new PhoneWorkspace((op, args) => { sent.Add((op, System.Text.Json.JsonSerializer.SerializeToNode(args)!.AsObject())); return Task.FromResult(Ok(new())); });
+        await model.CallAsync("+15550100", "sim-two");
+        await model.CallActionAsync("phone.route", args: new { endpointId = "mac-endpoint", route = "bluetooth" });
+        await model.CallActionAsync("phone.mute", args: new { enabled = true });
+        Assert.Equal("sim-two", (string?)sent[0].Args["accountId"]);
+        Assert.Equal("mac-endpoint", (string?)sent[1].Args["endpointId"]);
+        Assert.False(model.Muted);
+        model.OnEvent(JsonNode.Parse("""{"event":"phone.calls","muted":true,"calls":[]}""")!.AsObject());
+        Assert.True(model.Muted);
+    }
+    [Fact] public async Task PhoneStatusProvidesAvailableSimAccounts()
+    {
+        var model = new PhoneWorkspace((_, _) => Task.FromResult(Ok(JsonNode.Parse("""{"dialer":true,"accounts":[{"id":"sim-one","name":"Personal","default":false},{"id":"sim-two","name":"Work","default":true}],"calls":{"calls":[]}}""")!.AsObject())));
+        Assert.True(await model.RefreshStatusAsync()); Assert.True(model.Dialer);
+        Assert.Equal("sim-two", Assert.Single(model.Accounts, x => x.Default).Id);
+        model.Clear(); Assert.Empty(model.Accounts);
+    }
     [Fact] public async Task AmbiguousSendIsQueriedWithoutSendingTwice()
     {
         var operations = new List<string>();

@@ -48,7 +48,7 @@ struct PhoneToolsView: View {
             if !phone.transferStatus.isEmpty { Text(phone.transferStatus).font(.callout).foregroundStyle(.secondary) }
         }.disabled(model.privacy)
             .onChange(of: (phone.tools["volume"] as? NSNumber)?.doubleValue) { _, value in if !editingVolume, let value { volume = value } }
-            .task { await phone.enter("tools"); volume = (phone.tools["volume"] as? NSNumber)?.doubleValue ?? 0 }.onDisappear { phone.leave() }
+            .task { await phone.enter("tools"); volume = (phone.tools["volume"] as? NSNumber)?.doubleValue ?? 0 }.onDisappear { phone.leave("tools") }
             .confirmationDialog("Restart the connected phone?", isPresented: $restarting, titleVisibility: .visible) { Button("Restart phone") { Task { await phone.restartPhone() } }; Button("Cancel", role: .cancel) {} } message: { Text("Active calls and transfers will stop. PixelBridge will reconnect when the phone is ready; Android may need its first unlock.") }
     }
 }

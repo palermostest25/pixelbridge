@@ -40,7 +40,7 @@ class SetupActivity : Activity() {
         root.addView(TextView(this).apply { text = when(feature) { "calling" -> "Choose PixelBridge as your Phone app to answer, end and manage calls from your computer. Audio stays on this phone or its Bluetooth headset."; "notifications" -> "Enable PixelBridge notification access in Android settings. Message content and replies are optional below."; else -> "Allow only the features you want. Contacts, SMS, calling and call history each need Android permission. Some installers restrict SMS/call history until they allow those permissions." }; setPadding(0,24,0,24) })
         if (feature == "notifications") {
             val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
-            root.addView(CheckBox(this).apply { text = "Share notification titles and text with my paired computer (enables replies)"; isChecked = prefs.getBoolean("notif_content",false); setOnCheckedChangeListener { _, value -> prefs.edit().putBoolean("notif_content",value).apply() } })
+            root.addView(CheckBox(this).apply { text = "Share notification titles and text with my paired computer (enables replies)"; isChecked = prefs.getBoolean("notif_content",false); setOnCheckedChangeListener { _, value -> prefs.edit().putBoolean("notif_content",value).apply(); BridgeService.start(this@SetupActivity) } })
         } else if (feature == "calling") {
             val role = getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_DIALER)
             root.addView(TextView(this).apply { text = if (role) "Call controls enabled" else "Android still needs your default Phone app choice" })
@@ -51,6 +51,6 @@ class SetupActivity : Activity() {
         root.addView(Button(this).apply { text = "Done"; setOnClickListener { BridgeService.start(this@SetupActivity); finish() } })
         setContentView(android.widget.ScrollView(this).apply { addView(root) })
     }
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); render() }
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) { super.onActivityResult(requestCode,resultCode,data);render() }
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) { super.onRequestPermissionsResult(requestCode, permissions, grantResults); render(); BridgeService.start(this) }
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) { super.onActivityResult(requestCode,resultCode,data);render(); BridgeService.start(this) }
 }

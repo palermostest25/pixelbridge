@@ -9,7 +9,9 @@ public sealed class PhoneFeatureException(string code, string message) : Excepti
 public sealed record TextThread(long Id, string Address, string Preview, long DateMs, bool Unread);
 public sealed record PhoneText(long Id, string Address, string Body, long DateMs, bool Incoming, int Type);
 public sealed record PhoneContact(long Id, string Name, string Number) { public override string ToString() => $"{Name} · {Number}"; }
-public sealed record PhoneCall(string Id, string Number, string State, bool CanHold, long ConnectedAtMs);
+public sealed record PhoneCall(string Id, string Number, string State, bool CanHold, long ConnectedAtMs, bool CanMerge=false, bool CanSwap=false);
+public sealed record PhoneEndpoint(string Id, string Name, string Route, bool Selected) { public override string ToString() => Name; }
+public sealed record PhoneAccount(string Id, string Name, bool Default) { public override string ToString() => Name; }
 public sealed record RecentCall(long Id, string Number, string Name, long DateMs, long DurationSeconds, int Type);
 public sealed record PhoneApp(string Name, string Component) { public override string ToString() => Name; }
 public sealed record PhoneNotification(string Key, string App, string Sender, string? Text, bool Redacted, bool CanReply, long PostedMs);
@@ -24,6 +26,9 @@ public sealed class PhoneWorkspace
     public IReadOnlyList<TextThread> Threads { get; private set; } = [];
     public IReadOnlyList<PhoneText> Messages { get; private set; } = [];
     public IReadOnlyList<PhoneContact> Contacts { get; private set; } = [];
+    public IReadOnlyList<PhoneAccount> Accounts { get; private set; } = [];
+    public IReadOnlyList<PhoneEndpoint> Endpoints { get; private set; } = [];
+    public bool CanAddCall { get; private set; }
     public IReadOnlyList<PhoneCall> Calls { get; private set; } = [];
     public IReadOnlyList<RecentCall> History { get; private set; } = [];
     public IReadOnlyList<PhoneApp> Apps { get; private set; } = [];
@@ -64,7 +69,7 @@ public sealed class PhoneWorkspace
         catch (Exception e) { Error = e.Message; return false; }
         finally { Changed?.Invoke(); }
     }
-    public Task<bool> RefreshStatusAsync() => Perform(async () => { Status = await RequestAsync("phone.status"); ApplyCalls(Status["calls"] as JsonObject); });
+    public Task<bool> RefreshStatusAsync() => Perform(async () => { Status = await RequestAsync("phone.status"); Accounts = Rows(Status,"accounts").Select(x=>new PhoneAccount(Str(x,"id"),Str(x,"name"),Bool(x,"default"))).ToArray(); ApplyCalls(Status["calls"] as JsonObject); });
     public Task<bool> WatchAsync(bool on) => Perform(async () => { if (_watching == on) return; await RequestAsync("phone.watch", new { enabled = on }); _watching = on; });
     public Task<bool> RefreshThreadsAsync() => Perform(async () =>
     {
@@ -113,7 +118,7 @@ public sealed class PhoneWorkspace
         catch (Exception e) { Error = e.Message; SendStatus = "Send confirmation unavailable. Nothing will be retried automatically."; return false; }
         finally { Interlocked.Exchange(ref _sending, 0); Changed?.Invoke(); }
     }
-    public Task<bool> CallAsync(string number) => Perform(async () => { await RequestAsync("phone.call", new { number }); });
+    public Task<bool> CallAsync(string number, string? accountId = null) => Perform(async () => { await RequestAsync("phone.call", new { number, accountId }); });
     public Task<bool> CallActionAsync(string action, string? callId = null, object? args = null) => Perform(async () =>
     {
         var values = args == null ? new JsonObject() : JsonSerializer.SerializeToNode(args)!.AsObject();
@@ -149,8 +154,9 @@ public sealed class PhoneWorkspace
     private void ApplyCalls(JsonObject? row)
     {
         if (row == null) return;
-        Calls = Rows(row, "calls").Select(x => new PhoneCall(Str(x, "id"), Str(x, "number"), Str(x, "state"), Bool(x, "canHold"), Long(x, "connectedAtMs"))).ToArray();
-        Muted = Bool(row, "muted"); CallRoute = Str(row, "route");
+        Calls = Rows(row, "calls").Select(x => new PhoneCall(Str(x, "id"), Str(x, "number"), Str(x, "state"), Bool(x, "canHold"), Long(x, "connectedAtMs"), Bool(x,"canMerge"), Bool(x,"canSwap"))).ToArray();
+        Muted = Bool(row, "muted"); CallRoute = Str(row, "route"); CanAddCall=Bool(row,"canAddCall");
+        Endpoints = Rows(row,"endpoints").Select(x=>new PhoneEndpoint(Str(x,"id"),Str(x,"name"),Str(x,"route"),Bool(x,"selected"))).ToArray();
     }
     private async Task StopWatchSafely() { try { await _rpc("phone.watch", new { enabled = false }); } catch { } }
     public void ConfigureNotifications(bool enabled, bool previews)
@@ -165,7 +171,7 @@ public sealed class PhoneWorkspace
     public void Clear()
     {
         Interlocked.Increment(ref _dataGeneration); Interlocked.Increment(ref _messageGeneration); Interlocked.Increment(ref _contactGeneration);
-        Threads = []; Messages = []; Contacts = []; Calls = []; History = []; Apps = []; Notifications = []; Status = null; Tools = null; _watching = false; SelectedThread = null; Changed?.Invoke();
+        Threads = []; Messages = []; Contacts = []; Calls = []; Accounts=[]; Endpoints=[]; CanAddCall=false; Muted=false; CallRoute="phone"; History = []; Apps = []; Notifications = []; Status = null; Tools = null; _watching = false; SelectedThread = null; Changed?.Invoke();
     }
     public static string ReceiptLabel(JsonObject row) => Str(row, "state") switch { "queued" => "Queued on phone", "sent" => "Sent to carrier", "delivered" => "Delivery confirmed", "failed" => "Send failed: " + Str(row, "error"), _ => "Status unknown—check the phone" };
     private static IEnumerable<JsonObject> Rows(JsonObject node, string key) => (node[key] as JsonArray ?? new JsonArray()).OfType<JsonObject>();

@@ -17,15 +17,15 @@ public sealed class PhoneHubPage : UserControl, IPage
     private readonly TextBlock _notice = new(), _receipt = new(), _detail = new();
     private readonly ListBox _list = new(), _messages = new(), _apps = new(), _files = new();
     private readonly TextBox _number = new(), _draft = new(), _search = new(), _tone = new();
-    private readonly Button _send = new(), _answer = new(), _end = new(), _hold = new(), _mute = new();
-    private readonly ComboBox _route = new();
+    private readonly Button _send = new(), _answer = new(), _end = new(), _hold = new(), _mute = new(), _merge = new(), _swap = new();
+    private readonly ComboBox _route = new(), _account = new();
     private readonly Slider _volume = new();
     private readonly CheckBox _flash = new();
     private readonly DispatcherTimer _searchTimer;
     private readonly DispatcherTimer _volumeTimer;
     private bool _volumePending;
     private bool _active, _needsLoad = true, _updating, _working;
-    private object? _rows, _messageRows, _appRows, _notificationRows;
+    private object? _rows, _messageRows, _appRows, _notificationRows, _accountRows, _endpointRows;
     private sealed record Row(string Key, string Title, string Detail, object Value);
     private PhoneWorkspace Phone => _c.Phone;
 
@@ -94,19 +94,28 @@ public sealed class PhoneHubPage : UserControl, IPage
     private void BuildCalls()
     {
         _root.Children.Add(Button("Enable incoming-call controls…", async()=>{await _c.Commands.OpenSetupAsync("calling");_c.LaunchScrcpy(false);}));
-        var dial=new StackPanel {Orientation=Orientation.Horizontal};_number.Width=300;_number.FontSize=18;_number.Margin=new(0,0,12,0);dial.Children.Add(_number);dial.Children.Add(Button("Call",async()=>await Phone.CallAsync(_number.Text)));_root.Children.Add(dial);
+        var dial=new StackPanel {Orientation=Orientation.Horizontal};_number.Width=300;_number.FontSize=18;_number.Margin=new(0,0,12,0);dial.Children.Add(_number);dial.Children.Add(Button("Call",async()=>await Phone.CallAsync(_number.Text,(_account.SelectedItem as PhoneAccount)?.Id)));_root.Children.Add(dial);
+        _account.Margin=new(0,12,0,12);_account.MinWidth=240;_account.HorizontalAlignment=HorizontalAlignment.Left;_root.Children.Add(_account);
         _root.Children.Add(Hint("Call audio stays on the phone, speaker or Bluetooth headset. To answer and manage calls here, choose PixelBridge as the default Phone app in phone setup."));
         _root.Children.Add(Prepare(_list,140));
         var actions=new WrapPanel();
-        foreach(var b in new[]{_answer,_end,_hold,_mute}){b.Padding=new(12,6,12,6);b.Margin=new(0,0,8,8);actions.Children.Add(b);}
-        _answer.Content="Answer";_end.Content="End call";_hold.Content="Hold";_mute.Content="Mute";
+        foreach(var b in new[]{_answer,_end,_hold,_mute,_merge,_swap}){b.Padding=new(12,6,12,6);b.Margin=new(0,0,8,8);actions.Children.Add(b);}
+        _answer.Content="Answer";_end.Content="End call";_hold.Content="Hold";_mute.Content="Mute microphone";_merge.Content="Merge calls";_swap.Content="Swap calls";
         _answer.Click+=async(_,_)=>await CallAction("phone.answer");_end.Click+=async(_,_)=>await CallAction("phone.end");
         _hold.Click+=async(_,_)=>await CallAction(SelectedCall()?.State=="held"?"phone.unhold":"phone.hold");
         _mute.Click+=async(_,_)=>await Phone.CallActionAsync("phone.mute",args:new{enabled=!Phone.Muted});
-        _route.ItemsSource=new[]{"phone","speaker","bluetooth"};_route.SelectedIndex=0;_route.Margin=new(0,0,8,8);actions.Children.Add(_route);
-        _route.SelectionChanged+=async(_,_)=>{if(!_updating&&Phone.Calls.Count>0)await Phone.CallActionAsync("phone.route",args:new{route=(string)_route.SelectedItem});};
-        _tone.Width=55;_tone.MaxLength=1;_tone.Margin=new(0,0,8,8);actions.Children.Add(_tone);
-        actions.Children.Add(Button("Send keypad tone",async()=>{if(_tone.Text.Length==1&&"0123456789*#".Contains(_tone.Text))await Phone.CallActionAsync("phone.dtmf",SelectedCall()?.Id,new{digit=_tone.Text});}));_root.Children.Add(actions);
+        _merge.Click+=async(_,_)=>await CallAction("phone.merge");_swap.Click+=async(_,_)=>await CallAction("phone.swap");
+        _route.MinWidth=140;_route.Margin=new(0,0,8,8);actions.Children.Add(_route);
+        _route.SelectionChanged+=async(_,_)=>{if(!_updating&&Phone.Calls.Count>0&&_route.SelectedItem is PhoneEndpoint ep)await Phone.CallActionAsync("phone.route",args:new{endpointId=ep.Id,route=ep.Route});};
+        _root.Children.Add(actions);
+        _root.Children.Add(Hint("Use the keypad to dial. During a connected call, it sends tones for menus and extensions."));
+        var keypad=new System.Windows.Controls.Primitives.UniformGrid {Columns=3,Width=240,HorizontalAlignment=HorizontalAlignment.Left};
+        foreach(var digit in "123456789*0#") {
+            string key=digit.ToString();
+            var button=Button(key,async()=>{if(SelectedCall() is {State:"active"} call)await Phone.CallActionAsync("phone.dtmf",call.Id,new{digit=key});else _number.Text+=key;});
+            button.FontSize=22;button.MinHeight=48;button.Margin=new(0,0,8,8);keypad.Children.Add(button);
+        }
+        _root.Children.Add(keypad);
         _root.Children.Add(new TextBlock{Text="Recent calls",FontSize=18,FontWeight=FontWeights.SemiBold,Margin=new(0,20,0,12)});
         _root.Children.Add(Prepare(_messages,300));
         _messages.SelectionChanged+=(_,_)=>{if(_messages.SelectedItem is Row{Value:RecentCall row})_number.Text=row.Number;};
@@ -202,8 +211,13 @@ public sealed class PhoneHubPage : UserControl, IPage
         {
             if(!ReferenceEquals(_rows,Phone.Calls)){_rows=Phone.Calls;SetRows(_list,Phone.Calls.Select(x=>new Row(x.Id,x.Number,x.State,x)));}
             if(!ReferenceEquals(_messageRows,Phone.History)){_messageRows=Phone.History;SetRows(_messages,Phone.History.Select(x=>new Row(x.Id.ToString(),x.Name.Length>0?x.Name:x.Number,x.Number+" · "+DateTimeOffset.FromUnixTimeMilliseconds(x.DateMs).LocalDateTime.ToString("g"),x)));}
-            var call=SelectedCall();_answer.IsEnabled=Phone.Dialer&&call?.State=="ringing";_end.IsEnabled=Phone.Dialer&&call!=null;_hold.IsEnabled=Phone.Dialer&&call?.CanHold==true;_hold.Content=call?.State=="held"?"Resume":"Hold";_mute.IsEnabled=_end.IsEnabled;_mute.Content=Phone.Muted?"Unmute":"Mute";
-            _updating=true;_route.SelectedItem=Phone.CallRoute;_route.IsEnabled=_end.IsEnabled;_updating=false;
+            var call=SelectedCall();_answer.IsEnabled=Phone.Dialer&&call?.State=="ringing";_end.IsEnabled=Phone.Dialer&&call!=null;_hold.IsEnabled=Phone.Dialer&&call?.CanHold==true;_hold.Content=call?.State=="held"?"Resume":"Hold";_mute.IsEnabled=_end.IsEnabled;_mute.Content=Phone.Muted?"Unmute microphone":"Mute microphone";_merge.IsEnabled=Phone.Dialer&&call?.CanMerge==true;_swap.IsEnabled=Phone.Dialer&&call?.CanSwap==true;
+            _updating=true;
+            if(!ReferenceEquals(_endpointRows,Phone.Endpoints)){_endpointRows=Phone.Endpoints;_route.ItemsSource=Phone.Endpoints;}
+            _route.SelectedItem=Phone.Endpoints.FirstOrDefault(x=>x.Selected)??Phone.Endpoints.FirstOrDefault(x=>x.Route==Phone.CallRoute);_route.IsEnabled=_end.IsEnabled;
+            if(!ReferenceEquals(_accountRows,Phone.Accounts)){var chosen=(_account.SelectedItem as PhoneAccount)?.Id;_accountRows=Phone.Accounts;_account.ItemsSource=Phone.Accounts;_account.SelectedItem=Phone.Accounts.FirstOrDefault(x=>x.Id==chosen)??Phone.Accounts.FirstOrDefault(x=>x.Default)??(Phone.Accounts.Count==1?Phone.Accounts[0]:null);}
+            _account.Visibility=Phone.Accounts.Count>1?Visibility.Visible:Visibility.Collapsed;_account.IsEnabled=_c.Session.IsConnected&&!_c.PrivacyMode;
+            _end.Content=call?.State=="ringing"?"Decline":"End call";_updating=false;
         }
         if(_mode=="notifications"&&!ReferenceEquals(_notificationRows,Phone.Notifications)){_notificationRows=Phone.Notifications;SetRows(_list,Phone.Notifications.Select(x=>new Row(x.Key,x.App+(x.Sender.Length>0?" · "+x.Sender:""),x.Redacted?"Content hidden by phone":x.Text??"",x)));}
         if(_mode=="tools")

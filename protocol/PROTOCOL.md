@@ -202,7 +202,7 @@ These operations use the authenticated `RADIO_REQUEST` / `RADIO_RESPONSE` envelo
 
 | op | args | result |
 |---|---|---|
-| `phone.status` | — | `{smsSupported,dialer,permissions:{readSms,sendSms,contacts,callLog,callPhone,phoneState},calls:{calls:[],muted,route},callAudio:"phone",notificationReplies}` |
+| `phone.status` | — | `{smsSupported,dialer,permissions:{readSms,sendSms,contacts,callLog,callPhone,phoneState},accounts:[{id,name,default}],defaultAccountId,calls:{calls:[],muted,route,endpoints:[],canAddCall},callAudio:"phone",notificationReplies}` |
 | `phone.watch` | `{enabled}` | Same as status; observes SMS, contacts and call-log changes only while enabled |
 | `contacts.list` | `{query?,limit?:1..100}` | `{contacts:[{id,name,number}]}` |
 | `sms.threads` | — | `{threads:[{id,address,preview,dateMs,incoming,unread}],format:"sms"}`; up to 60 threads from 2000 recent messages |
@@ -210,11 +210,11 @@ These operations use the authenticated `RADIO_REQUEST` / `RADIO_RESPONSE` envelo
 | `sms.send` | `{number,text,token,subscriptionId?}` | Send receipt; token is 16–80 letters, digits, underscores or hyphens (desktop uses 32 hexadecimal characters); at most 12000 characters |
 | `sms.receipt` | `{token}` | `{state:"queued|sent|delivered|failed|unknown",token?,error?}` |
 | `phone.history` | — | `{calls:[{id,number,name,dateMs,durationSeconds,type}]}`; up to 75 |
-| `phone.call` | `{number}` | `{state:"requested"}` |
-| `phone.answer`, `phone.end`, `phone.hold`, `phone.unhold` | `{callId}` | `{state:"requested"}`; requires default Phone role |
+| `phone.call` | `{number,accountId?}` | `{state:"requested"}`; explicit SIM required if multiple lines have no default; account IDs come from status |
+| `phone.answer`, `phone.end`, `phone.reject`, `phone.hold`, `phone.unhold`, `phone.merge`, `phone.swap`, `phone.split` | `{callId}` | `{state:"requested"}`; requires default Phone role and the relevant call capability |
 | `phone.dtmf` | `{callId,digit:"0..9|*|#"}` | Same; tone stops after a short interval |
 | `phone.mute` | `{enabled}` | Same |
-| `phone.route` | `{route:"phone|speaker|bluetooth"}` | Same; route must be available |
+| `phone.route` | `{endpointId?,route?:"phone|speaker|bluetooth|wired|streaming"}` | Same; endpoint IDs come from the current snapshot; unavailable/stale endpoints are rejected |
 | `notifications.list` | — | `{notifications:[{key,appLabel,senderDisplay,text,redacted,canReply,postedMs}]}` |
 | `notifications.reply` | `{key,text}` | `{state:"requested"}`; requires notification access, phone content opt-in and an active reply action |
 | `notifications.dismiss` | `{key}` | `{}` |
@@ -226,5 +226,7 @@ These operations use the authenticated `RADIO_REQUEST` / `RADIO_RESPONSE` envelo
 | `tools.apps` | — | `{apps:[{name,component}]}`; up to 150 launcher entries |
 
 Events: `phone.changed` coalesces provider changes; `phone.calls` carries the current calls/mute/route snapshot; `phone.error` carries asynchronous call failures; `sms.receipt` carries multipart send/delivery progress; `notifications.removed {key}` removes stale entries. Call audio remains on the phone. Sending the same SMS token twice never submits it again, and changing its payload is rejected. The phone retains at most 150 receipts/fingerprints without message bodies. If a send acknowledgement is lost, query its receipt; do not invent a new token to retry it automatically.
+
+From app 0.4.1, call snapshots include `endpoints:[{id,name,route,selected}]`, `canAddCall`, and per-call `canMerge`, `canSwap`, `isConference`. Android 14+ uses `InCallService` endpoint/mute callbacks and `requestCallEndpointChange`; hosts display confirmed state, not an optimistic toggle. An explicit stale `callId` never falls back to a different call. Outgoing CallStyle notifications are attached to a `phoneCall` foreground service; an OS rejection falls back to an ordinary notification and must not crash the dialer.
 
 The desktop uses serial-scoped ADB for explicit app launch, display, file transfer and confirmed reboot actions. The protected `.phone.SetupActivity` accepts only the named setup features `communications`, `calling` and `notifications`; Android owns the resulting permission and role dialogs. Setup and pairing entry points require the shell/system `DUMP` permission.
