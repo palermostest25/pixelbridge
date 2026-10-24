@@ -62,7 +62,7 @@ jobs:
         run: |
           $p = Start-Process artifacts/windows/PixelBridge/PixelBridge.exe -ArgumentList '--render-pages', "$pwd/artifacts/ui" -PassThru
           if (-not $p.WaitForExit(90000)) { $p.Kill(); throw 'UI render timed out' }
-          if ((Get-ChildItem artifacts/ui/*.png).Count -ne 11) { throw 'Missing Windows page renders' }
+          if ((Get-ChildItem artifacts/ui/*.png).Count -ne 16) { throw 'Missing Windows page renders' }
       - uses: actions/upload-artifact@v4
         with:
           name: windows-package
@@ -77,6 +77,7 @@ jobs:
             artifacts/tests
             artifacts/ui
   linux:
+    needs: android
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -92,8 +93,13 @@ jobs:
       - run: dotnet test windows/PixelBridge.Tests -c Release --logger trx
       - run: dotnet run --project linux/PixelBridge.MediaSmoke -c Release
       - run: dotnet publish linux/PixelBridge.Linux -c Release -r linux-x64 --self-contained true -o artifacts/linux/app
+      - uses: actions/download-artifact@v4
+        with:
+          name: phone-app
+          path: artifacts/android
+      - run: cp artifacts/android/PixelBridge-Android.apk artifacts/linux/app/PixelBridge.apk
       - run: timeout 90s xvfb-run -a artifacts/linux/app/pixelbridge --render-pages artifacts/ui
-      - run: test "$(find artifacts/ui -name '*.png' | wc -l)" -eq 9
+      - run: test "$(find artifacts/ui -name '*.png' | wc -l)" -eq 15
       - run: |
           cp linux/install.sh README.md artifacts/linux/
           chmod +x artifacts/linux/install.sh artifacts/linux/app/pixelbridge
@@ -111,11 +117,18 @@ jobs:
             artifacts/ui
             windows/PixelBridge.Tests/TestResults
   macos:
+    needs: android
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - run: swift test --package-path macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: phone-app
+          path: artifacts/android
       - run: bash macos/build-local.sh
+        env:
+          PIXELBRIDGE_ANDROID_APK: ${{ github.workspace }}/artifacts/android/PixelBridge-Android.apk
       - name: Check image geometry and connection recovery
         run: |
           swiftc -O macos/App/Media/VideoFrameProcessor.swift macos/Tests/FrameGeometry/Geometry.swift -o /tmp/geometry

@@ -19,6 +19,9 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _timer;
     private WriteableBitmap? _bitmap;
     private int _busy;
+    private PhoneHubView? _hub;
+    private readonly Dictionary<string, PhoneHubView> _phonePages = new();
+    private CompassHubView? _compassView;
     private volatile bool _previewVisible;
     private bool _allowClose;
     private int _tetherCountdown;
@@ -45,6 +48,8 @@ public partial class MainWindow : Window
         _loadingCamera = false;
         SerialBox.Text = m.Settings.TargetSerial;
         AutoConnect.IsChecked = m.Settings.AutoConnect;
+        ShowOnConnect.IsChecked = m.Settings.ShowOnConnect;
+        AutoUpdateCompanion.IsChecked = m.Settings.AutoUpdateCompanion;
         Autostart.IsChecked = File.Exists(AutostartPath);
         ApiUrl.Text = $"ws://127.0.0.1:{m.Settings.SensorWebSocketPort}/sensors?token={m.Settings.ApiToken}";
         AboutText.Text = $"PixelBridge {typeof(App).Assembly.GetName().Version?.ToString(3)} · phone app {DeviceSession.ExpectedAppVersion} · settings in {AppPaths.DataDir}";
@@ -88,10 +93,17 @@ public partial class MainWindow : Window
 
     private void Show(string key)
     {
+        _hub?.SetActive(false);
         _page = key;
+        bool phonePage = key is "messages" or "calls" or "contacts" or "tools" or "notifications";
+        PhoneHub.IsVisible = phonePage; CompassHub.IsVisible = key == "compass";
+        if (phonePage) { if (!_phonePages.TryGetValue(key, out _hub)) _phonePages[key] = _hub = new PhoneHubView(_m, key); PhoneHub.Content = _hub; _hub.SetActive(IsVisible); }
+        if (key == "compass") { _compassView ??= new CompassHubView(_m); CompassHub.Content = _compassView; }
+
         PageHome.IsVisible = key == "home"; PageCamera.IsVisible = key == "camera"; PageMic.IsVisible = key == "mic";
         PageSensors.IsVisible = key == "sensors"; PageLocation.IsVisible = key == "location"; PageNetwork.IsVisible = key == "network";
         PageBluetooth.IsVisible = key == "bluetooth"; PagePhone.IsVisible = key == "phone"; PageSettings.IsVisible = key == "settings";
+        DashboardScroll.Offset = new Vector(0,0);
         Tick();
     }
 
@@ -116,6 +128,11 @@ public partial class MainWindow : Window
 
     private void Tick()
     {
+        _hub?.SetActive(IsVisible && WindowState != WindowState.Minimized && PhoneHub.IsVisible && !_m.Privacy);
+        _m.CompassVisible = IsVisible && WindowState != WindowState.Minimized && _page == "compass";
+        _m.Session.SetSensorDemand("compass", _m.CompassVisible);
+        if (_m.CompassVisible) _compassView?.Tick();
+        if (PhoneHub.IsVisible) _hub?.Tick();
         _previewVisible = IsVisible && WindowState != WindowState.Minimized && _page == "camera";
         _m.Session.SetSensorDemand("page", IsVisible && WindowState != WindowState.Minimized && _page == "sensors");
         if (!IsVisible || WindowState == WindowState.Minimized) return;
@@ -304,6 +321,8 @@ public partial class MainWindow : Window
     {
         _m.Settings.TargetSerial = (SerialBox.Text ?? "").Trim();
         _m.Settings.AutoConnect = AutoConnect.IsChecked == true;
+        _m.Settings.ShowOnConnect = ShowOnConnect.IsChecked == true;
+        _m.Settings.AutoUpdateCompanion = AutoUpdateCompanion.IsChecked == true;
         _m.Settings.Save();
         if (Autostart.IsChecked == true)
         {
@@ -328,7 +347,7 @@ public partial class MainWindow : Window
         Directory.CreateDirectory(dir);
         await Task.Delay(4000);
         int i = 0;
-        foreach (var key in new[] { "home", "camera", "mic", "sensors", "location", "network", "bluetooth", "phone", "settings" })
+        foreach (var key in new[] { "home", "messages", "calls", "contacts", "compass", "tools", "notifications", "camera", "mic", "sensors", "location", "network", "bluetooth", "phone", "settings" })
         {
             await Dispatcher.UIThread.InvokeAsync(() => Navigate(key));
             await Task.Delay(1200);

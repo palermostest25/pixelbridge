@@ -188,10 +188,15 @@ struct SettingsView: View {
     @EnvironmentObject var session: DeviceSession
     @State private var serial = ""
     @State private var auto = true
+    @AppStorage("showOnConnect") private var showOnConnect = true
+    @AppStorage("autoUpdateCompanion") private var updateCompanion = true
     var body: some View {
         Form {
             TextField("Phone serial", text: $serial)
             Toggle("Connect automatically when plugged in", isOn: $auto)
+            Toggle("Bring PixelBridge forward when the phone is connected", isOn: $showOnConnect)
+            Toggle("Update the paired phone companion automatically", isOn: $updateCompanion)
+            Text("Updates use the bundled APK and require its signing key to match the existing phone app.").font(.caption).foregroundStyle(.secondary)
             Button("Save") { session.settings.targetSerial = serial; session.settings.autoConnect = auto; session.settings.save() }
         }
         .padding(20).frame(width: 420)

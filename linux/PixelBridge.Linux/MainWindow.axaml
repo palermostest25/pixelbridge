@@ -22,6 +22,12 @@
             </StackPanel>
             <ListBox x:Name="Nav" Classes="nav" Background="Transparent" SelectionChanged="Nav_Changed">
                 <ListBoxItem Content="Home" Tag="home"/>
+                <ListBoxItem Content="Messages" Tag="messages"/>
+                <ListBoxItem Content="Calls" Tag="calls"/>
+                <ListBoxItem Content="Contacts" Tag="contacts"/>
+                <ListBoxItem Content="Compass" Tag="compass"/>
+                <ListBoxItem Content="Phone tools" Tag="tools"/>
+                <ListBoxItem Content="Notifications" Tag="notifications"/>
                 <ListBoxItem Content="Camera" Tag="camera"/>
                 <ListBoxItem Content="Microphone" Tag="mic"/>
                 <ListBoxItem Content="Motion sensors" Tag="sensors"/>
@@ -34,7 +40,7 @@
         </DockPanel>
 
         <Grid Grid.Column="1">
-            <ScrollViewer>
+            <ScrollViewer x:Name="DashboardScroll">
                 <StackPanel Margin="36,28" MaxWidth="1000">
                     <!-- HOME -->
                     <StackPanel x:Name="PageHome">
@@ -85,6 +91,9 @@
                             </Border>
                         </Grid>
                     </StackPanel>
+
+                    <ContentControl x:Name="PhoneHub" IsVisible="False"/>
+                    <ContentControl x:Name="CompassHub" IsVisible="False"/>
 
                     <!-- CAMERA -->
                     <StackPanel x:Name="PageCamera" IsVisible="False">
@@ -233,6 +242,8 @@
                                 <TextBlock Text="Phone serial (empty = the only phone attached)" Classes="secondary"/>
                                 <TextBox x:Name="SerialBox"/>
                                 <ToggleSwitch x:Name="AutoConnect" OnContent="Connect automatically" OffContent="Connect automatically"/>
+                                <ToggleSwitch x:Name="ShowOnConnect" Content="Bring dashboard forward when the phone connects"/>
+                                <ToggleSwitch x:Name="AutoUpdateCompanion" Content="Update the phone companion automatically (matching signing key required)"/>
                                 <ToggleSwitch x:Name="Autostart" OnContent="Start when I log in" OffContent="Start when I log in"/>
                                 <Button Classes="accent" Content="Save" Click="Save_Click" HorizontalAlignment="Left"/>
                                 <TextBlock x:Name="AboutText" Classes="secondary"/>

@@ -3,10 +3,11 @@ import PixelBridgeKit
 import SwiftUI
 
 enum Page: String, CaseIterable, Identifiable {
-    case home, camera, mic, sensors, location, network, bluetooth, notifications, phone, diagnostics
+    case home, messages, calls, contacts, camera, mic, sensors, compass, location, network, bluetooth, notifications, phone, tools, diagnostics
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .messages: "Messages"; case .calls: "Calls"; case .contacts: "Contacts"; case .compass: "Compass"; case .tools: "Phone Tools"
         case .home: "Home"; case .camera: "Camera"; case .mic: "Microphone"; case .sensors: "Motion Sensors"; case .location: "Location"
         case .network: "Internet Sharing"; case .bluetooth: "Bluetooth"; case .notifications: "Notifications"; case .phone: "Phone Screen"
         case .diagnostics: "Diagnostics"
@@ -14,6 +15,11 @@ enum Page: String, CaseIterable, Identifiable {
     }
     var subtitle: String {
         switch self {
+        case .messages: "Your conversations, close at hand."
+        case .calls: "Make room for a proper conversation."
+        case .contacts: "The people you want to reach."
+        case .compass: "Find your bearings."
+        case .tools: "Useful little things, one cable away."
         case .home: "Your phone. A whole new set of possibilities."
         case .camera: "A better view, powered by your phone."
         case .mic: "Bring your phone’s microphone to your Mac."
@@ -28,6 +34,7 @@ enum Page: String, CaseIterable, Identifiable {
     }
     var icon: String {
         switch self {
+        case .messages: "message"; case .calls: "phone"; case .contacts: "person.crop.circle"; case .compass: "location.north.circle"; case .tools: "switch.2"
         case .home: "house"; case .camera: "camera"; case .mic: "mic"; case .sensors: "gyroscope"; case .location: "location"
         case .network: "network"; case .bluetooth: "dot.radiowaves.left.and.right"; case .notifications: "bell"; case .phone: "iphone"
         case .diagnostics: "stethoscope"
@@ -38,6 +45,7 @@ enum Page: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var session: DeviceSession
+    @Environment(\.openWindow) private var openWindow
     @State private var page: Page? = .home
 
     var body: some View {
@@ -46,11 +54,14 @@ struct ContentView: View {
                 Section {
                     Label(Page.home.title, systemImage: Page.home.icon).tag(Page.home)
                 }
+                Section("Conversations") {
+                    ForEach([Page.messages, .calls, .contacts, .notifications]) { p in Label { Text(p.title) } icon: { Image(systemName: p.icon).foregroundStyle(BridgeStyle.accent) }.tag(p) }
+                }
                 Section("Capture") {
-                    ForEach([Page.camera, .mic, .sensors, .location]) { p in Label(p.title, systemImage: p.icon).tag(p) }
+                    ForEach([Page.camera, .mic, .sensors, .compass, .location]) { p in Label { Text(p.title) } icon: { Image(systemName: p.icon).foregroundStyle(BridgeStyle.accent) }.tag(p) }
                 }
                 Section("Connect") {
-                    ForEach([Page.network, .bluetooth, .notifications, .phone]) { p in Label(p.title, systemImage: p.icon).tag(p) }
+                    ForEach([Page.network, .bluetooth, .phone, .tools]) { p in Label { Text(p.title) } icon: { Image(systemName: p.icon).foregroundStyle(BridgeStyle.accent) }.tag(p) }
                 }
                 Section("Support") { Label(Page.diagnostics.title, systemImage: Page.diagnostics.icon).tag(Page.diagnostics) }
             }
@@ -65,10 +76,6 @@ struct ContentView: View {
                     StatusPill()
                 }.padding(18)
             }
-            .safeAreaInset(edge: .bottom) {
-                Label("One cable. More possibilities.", systemImage: "cable.connector")
-                    .font(.caption).foregroundStyle(.secondary).padding(18)
-            }
         } detail: {
             ScrollView {
                 VStack(alignment: .leading, spacing: 28) {
@@ -78,6 +85,11 @@ struct ContentView: View {
                     }
                     Group {
                         switch page ?? .home {
+                        case .messages: MessagesView()
+                        case .calls: CallsView()
+                        case .contacts: ContactsView()
+                        case .compass: CompassView(compass: model.compass)
+                        case .tools: PhoneToolsView()
                         case .home: HomeView()
                         case .camera: CameraView()
                         case .mic: MicView()
@@ -85,7 +97,7 @@ struct ContentView: View {
                         case .location: LocationView()
                         case .network: NetworkView()
                         case .bluetooth: BluetoothView()
-                        case .notifications: NotificationsView()
+                        case .notifications: PhoneNotificationsView()
                         case .phone: PhoneView()
                         case .diagnostics: DiagnosticsView()
                         }
@@ -100,14 +112,15 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItem {
                     Toggle(isOn: Binding(get: { model.privacy }, set: { model.setPrivacy($0) })) { Label("Privacy", systemImage: "eye.slash") }
-                        .help("Pause camera, microphone, location and sensors")
+                        .help("Pause capture and access to phone data")
                 }
             }
         }
         .tint(BridgeStyle.accent)
-        .onChange(of: page, initial: true) { _, p in model.sensorsVisible = p == .sensors; model.cameraVisible = p == .camera }
+        .onAppear { BridgeAppDelegate.reopen = { openWindow(id: "dashboard") } }
+        .onChange(of: page, initial: true) { _, p in model.sensorsVisible = p == .sensors; model.compassVisible = p == .compass; model.cameraVisible = p == .camera }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { _ in model.updateSensorDemand() }
-        .onDisappear { model.sensorsVisible = false; model.cameraVisible = false }
+        .onDisappear { model.sensorsVisible = false; model.compassVisible = false; model.cameraVisible = false }
     }
 }
 

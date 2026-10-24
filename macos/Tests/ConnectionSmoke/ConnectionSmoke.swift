@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import PixelBridgeKit
 
 @main
@@ -39,7 +40,44 @@ struct ConnectionSmoke {
             if name == "none" { require(session.detail.contains("USB data cable"), "show a useful recovery instruction") }
             await session.shutdown()
         }
-        print("PASS: 15 device-selection and discovery checks; no real phone commands sent.")
+        let bootFixture = directory.appendingPathComponent("boot-fixture")
+        let counter = directory.appendingPathComponent("boot-count").path
+        let bootScript = """
+        #!/bin/sh
+        if [ "$1" = devices ]; then echo 'phone-boot device model:Pixel_7'; exit 0; fi
+        case "$*" in
+          *'echo pb-ok'*) echo pb-ok ;;
+          *'getprop sys.boot_completed'*)
+            n=0; [ ! -f '\(counter)' ] || n=$(cat '\(counter)')
+            n=$((n+1)); echo "$n" > '\(counter)'
+            if [ "$n" -lt 2 ]; then echo 0; else echo 1; fi ;;
+          *'am get-current-user'*) echo 0 ;;
+          *'am get-started-user-state 0'*)
+            n=$(cat '\(counter)'); if [ "$n" -lt 3 ]; then echo RUNNING_LOCKED; else echo RUNNING_UNLOCKED; fi ;;
+          *'getprop ro.product.device'*) echo fixture-unapproved ;;
+          *'getprop '*) echo fixture ;;
+          *) exit 99 ;;
+        esac
+        """
+        try bootScript.write(to: bootFixture, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bootFixture.path)
+        var bootSettings = BridgeSettings(); bootSettings.adbPath = bootFixture.path
+        let recovery = DeviceSession(settings: bootSettings)
+        var attached = 0; var details = [String]()
+        let attachment = recovery.phoneAttached.sink { attached += 1 }
+        let detail = recovery.$detail.sink { details.append($0) }
+        recovery.start()
+        for _ in 0..<200 {
+            if recovery.state == .wrongDevice { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        require(details.contains { $0.contains("Android is starting") }, "wait for Android boot without manual retry")
+        require(details.contains { $0.contains("Unlock Android once") }, "wait for first unlock without manual retry")
+        require(recovery.state == .wrongDevice, "continue device validation automatically after unlock")
+        require(attached == 1, "bring dashboard forward once per physical attachment, not every boot retry")
+        await recovery.shutdown()
+        withExtendedLifetime((attachment, detail)) {}
+        print("PASS: 19 device-selection, discovery and boot recovery checks; no real phone commands sent.")
     }
 
     static func require(_ condition: @autoclosure () -> Bool, _ message: String) {

@@ -1,6 +1,6 @@
 # PixelBridge
 
-Turn an Android phone into a USB webcam, microphone, motion sensor, GPS receiver, Bluetooth LE radio and network adapter. No root. Built with a screenless Pixel 7 in mind; initial USB debugging authorization and Android permissions are still required.
+Bring your Android phone to your desktop: messages, calls, contacts and notifications alongside a USB webcam, microphone, compass, motion sensors, GPS, Bluetooth LE and internet sharing. No root. Built with a screenless Pixel 7 in mind; initial USB debugging authorization and Android permissions are still required.
 
 | | Windows 11 | Linux | macOS 14+ |
 |---|---|---|---|
@@ -8,6 +8,7 @@ Turn an Android phone into a USB webcam, microphone, motion sensor, GPS receiver
 | Webcam output | PixelBridge Camera / Media Foundation | PixelBridge Camera / v4l2loopback | OBS Virtual Camera, or a provisioned PixelBridge extension |
 | Microphone output | VB-CABLE | PipeWire/PulseAudio virtual source | BlackHole |
 | Camera controls | Lens, zoom, OIS/EIS, rotation, mirror | Same | Same |
+| Messages, contacts, calls, notification replies, compass and phone tools | Yes | Yes | Yes |
 | Internet control | System tray | System tray | Menu bar |
 
 ## Install
@@ -22,11 +23,27 @@ On the phone, enable USB debugging and authorize this computer. Install `PixelBr
 
 **Existing installs:** Android updates must use the original signing key. CI APKs have a fresh debug signature and are intended for fresh installations. To preserve pairing and permissions on an existing phone, build using its original debug keystore. Never commit or upload that key. Do not uninstall an existing installation just to bypass a signing mismatch.
 
+## Conversations and phone tools
+
+**Messages** reads recent SMS conversations and sends texts through your phone’s carrier plan. Allow SMS permissions in the phone setup. Delivery receipts distinguish queued, sent and delivered; a lost acknowledgement never triggers an automatic resend. The current view loads up to 60 recent conversations and 75 messages per conversation. RCS, MMS attachments and proprietary messaging histories are not available through Android’s SMS provider. **Notifications** can reply to RCS and messaging apps when that app exposes Android’s reply action. Enable notification access and content sharing on the phone first; content is hidden by default.
+
+**Calls** can dial numbers and show call history with Android permission. To answer, end, hold, mute, change route or send keypad tones, choose PixelBridge as the phone’s default Phone app using **Open setup**. The phone includes a local dialer and incoming-call controls for when USB is disconnected. **Cellular call audio stays on the phone, speaker or Bluetooth headset**; Android does not expose both sides of a cellular call to an ordinary USB companion. PixelBridge’s microphone feature is separate. No call or message is sent merely by connecting.
+
+**Contacts** offers name/number search, calling and SMS composition. **Compass** uses magnetic north with tilt compensation, sensor accuracy and field strength, and pauses when hidden. **Phone Tools** provides flashlight, media volume, a short find-phone ring, vibration, app launching, display wake/sleep, confirmed restart and file transfers to/from Downloads. Existing files are not intentionally overwritten. Private phone data is held in desktop memory and cleared on disconnect or privacy mode; Android stores bounded send receipts without message bodies to prevent duplicate submissions.
+
+## Reconnect and background use
+
+Plugging in the selected phone brings the dashboard forward by default; disable this in Settings if preferred. PixelBridge waits through boot, opens the companion, recreates USB forwards and reconnects using the saved pairing. Android requires its first unlock after a restart before encrypted phone data is available. This cannot be skipped. On a screenless phone, open **Phone Screen** from an already authorized computer to enter that unlock yourself.
+
+The phone’s **Available after restart** option resumes only the idle USB listener after first unlock. Camera, mic, location and motion capture remain off until requested. Desktop packages include a matching companion APK and can update it in place on the next connection; signature mismatches stop with an explanation and never uninstall the phone app. Updates for an existing installation must use its original signing key.
+
+On macOS, closing the dashboard removes the Dock icon and keeps the menu-bar controls and bridge alive. Choose **Open PixelBridge** to restore the window. **Quit PixelBridge** exits completely. Windows and Linux keep their system-tray controls when the window closes.
+
 ## Camera and power
 
 Choose **Ultra wide**, **Wide/Back**, or **Front** from the phone's reported cameras. Ultra wide appears only when the phone exposes it. Zoom updates without restarting capture. Automatic stabilization selects optical stabilization where supported, otherwise electronic stabilization; actual capture feedback is displayed. Optical stabilization cannot be enabled on a lens without OIS. Automatic orientation follows the phone; manual quarter turns and mirroring apply to both preview and webcam. Portrait images fit within the webcam canvas without stretching.
 
-**Save power** defaults on: capture is capped at 15 fps. Turn it off for the configured 30 fps capture. Previews are limited to 15 fps independently of call output, and hidden previews stop updating. On macOS, frames go directly to the preview layer without rebuilding the SwiftUI interface. Motion sensors run only while their page is visible or a sensor API/export/OSC/tilt consumer needs them. Battery and thermal monitoring remain available without motion sensors. The Android app no longer holds the display awake; phone mirroring is opt-in, limited to 15 fps and switches the physical display off. Stop camera, mic and USB internet sharing when unused to reduce the remaining phone/USB/network load.
+**Save power** defaults on: encoded video is capped at 15 fps even when a lens only exposes a 30 fps capture range. Turn it off for the configured 30 fps capture. Previews are limited to 15 fps independently of call output, and hidden previews stop updating. On macOS, frames go directly to the preview layer without rebuilding the SwiftUI interface. Motion sensors run only while their page is visible or a sensor API/export/OSC/tilt consumer needs them. Battery and thermal monitoring remain available without motion sensors. The Android app no longer holds the display awake; phone mirroring is opt-in, limited to 15 fps and switches the physical display off. Stop camera, mic and USB internet sharing when unused to reduce the remaining phone/USB/network load.
 
 The **USB internet sharing** control changes the phone's USB tethering mode, including sharing its Wi-Fi connection over USB. It does not disable the phone's Wi-Fi. The USB link briefly reconnects when the mode changes. This requires Android to permit the authorized ADB shell to change USB functions.
 

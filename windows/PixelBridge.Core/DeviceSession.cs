@@ -32,6 +32,8 @@ public sealed class BridgeSettings
     public string? AdbPath { get; set; }
     public string? ScrcpyPath { get; set; }
     public bool AutoConnect { get; set; } = true;
+    public bool ShowOnConnect { get; set; } = true;
+    public bool AutoUpdateCompanion { get; set; } = true;
     public int SensorRateHz { get; set; } = 50;
     public string CameraId { get; set; } = "0";
     public double CameraZoom { get; set; } = 1;
@@ -86,7 +88,7 @@ public sealed class BridgeSettings
 public sealed class DeviceSession : IAsyncDisposable
 {
     public const string Package = "dev.pixelbridge.app";
-    public const string ExpectedAppVersion = "0.3.0";
+    public const string ExpectedAppVersion = "0.4.0";
     private static readonly (string name, int port)[] Channels = [("control", 27183), ("video", 27184), ("audio", 27185), ("telemetry", 27186)];
 
     private readonly BridgeSettings _settings;
@@ -99,6 +101,7 @@ public sealed class DeviceSession : IAsyncDisposable
     private Task? _runTask;
     private long _lastPongNs;
     private int _backoffSec = 2;
+    private DateTime _nextVersionProbe = DateTime.MinValue;
     private DateTime _nextAttempt = DateTime.MinValue;
 
     public AdbClient? Adb { get; private set; }
@@ -132,6 +135,9 @@ public sealed class DeviceSession : IAsyncDisposable
     public event Action<JsonObject>? Status;
     public event Action<byte, JsonObject>? StreamEvent;
     public event Action<JsonObject>? VideoConfig;
+    public event Action? PhoneAttached;
+    private string? _presentSerial;
+    private readonly HashSet<string> _attemptedCompanionUpdates = new();
     public event Action<Frame>? VideoFrame;
     public event Action<JsonObject>? AudioConfig;
     public event Action<Frame>? AudioFrame;
@@ -198,6 +204,7 @@ public sealed class DeviceSession : IAsyncDisposable
             else
             {
                 _resolvedSerial = "";
+                if (phones.Count == 0) { _presentSerial = null; _nextAttempt = DateTime.MinValue; _backoffSec = 2; }
                 OtherDevices = devices;
                 SetState(LinkState.Disconnected, phones.Count == 0 ? "No phone detected on USB" : "Several phones attached: choose one in Settings");
                 return;
@@ -208,11 +215,13 @@ public sealed class DeviceSession : IAsyncDisposable
         var target = devices.FirstOrDefault(d => d.Serial == Serial);
         if (target is null)
         {
+            _presentSerial = null;
             SetState(LinkState.Disconnected, "Phone not detected on USB");
             _backoffSec = 2;
             _nextAttempt = DateTime.MinValue;
             return;
         }
+        if (_presentSerial != target.Serial) { _presentSerial = target.Serial; PhoneAttached?.Invoke(); }
         switch (target.State)
         {
             case "unauthorized": SetState(LinkState.Unauthorized, "USB debugging not authorised for this PC"); return;
@@ -220,6 +229,11 @@ public sealed class DeviceSession : IAsyncDisposable
             default: SetState(LinkState.Offline, $"adb state '{target.State}'"); return;
         }
         if (!_settings.AutoConnect && State != LinkState.Connecting) { SetState(LinkState.Disconnected, "auto-connect disabled; press Connect"); return; }
+        if (State is LinkState.ApkMissing or LinkState.ApkOutdated && DateTime.UtcNow >= _nextVersionProbe)
+        {
+            _nextVersionProbe = DateTime.UtcNow.AddSeconds(5);
+            if (await Adb.PackageVersionAsync(Serial, Package, ct).ConfigureAwait(false) == ExpectedAppVersion) RetryNow();
+        }
         if (DateTime.UtcNow < _nextAttempt) return;
         await ConnectAsync(ct).ConfigureAwait(false);
     }
@@ -235,6 +249,16 @@ public sealed class DeviceSession : IAsyncDisposable
             SetState(LinkState.Connecting, "validating device");
             var echo = await Adb.ShellAsync(Serial, "echo pb-ok", TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
             if (!echo.Ok || !echo.StdOut.Contains("pb-ok")) { Fail(LinkState.Offline, "shell handshake failed"); return; }
+            var boot = await Adb.GetPropAsync(Serial, "sys.boot_completed", ct).ConfigureAwait(false);
+            var currentUser = (await Adb.ShellAsync(Serial, "am get-current-user", TimeSpan.FromSeconds(5), ct).ConfigureAwait(false)).StdOut.Trim();
+            if (!int.TryParse(currentUser, out var userId) || userId < 0) userId = 0;
+            var userState = (await Adb.ShellAsync(Serial, $"am get-started-user-state {userId}", TimeSpan.FromSeconds(5), ct).ConfigureAwait(false)).StdOut;
+            var readiness = PhoneBoot.Evaluate(boot, userState);
+            if (readiness != PhoneReadiness.Ready)
+            {
+                SetState(LinkState.Connecting, readiness == PhoneReadiness.Booting ? "Android is starting. PixelBridge will reconnect automatically." : "Unlock Android once after its restart. PixelBridge will continue automatically.");
+                _nextAttempt = DateTime.UtcNow.AddSeconds(2); return;
+            }
             foreach (var p in new[] { "ro.product.device", "ro.product.model", "ro.build.version.release", "ro.build.version.sdk", "ro.build.id" })
                 DeviceProps[p] = await Adb.GetPropAsync(Serial, p, ct).ConfigureAwait(false);
             if (!_settings.ApprovedDevices.Contains(DeviceProps["ro.product.device"]))
@@ -243,6 +267,18 @@ public sealed class DeviceSession : IAsyncDisposable
                 return;
             }
             var version = await Adb.PackageVersionAsync(Serial, Package, ct).ConfigureAwait(false);
+            if (version != ExpectedAppVersion && _settings.AutoUpdateCompanion)
+            {
+                var apk = Path.Combine(AppContext.BaseDirectory, "PixelBridge.apk");
+                var updateKey = Serial + ":" + version;
+                if (File.Exists(apk) && _attemptedCompanionUpdates.Add(updateKey))
+                {
+                    SetState(LinkState.Connecting, "Updating the phone companion…");
+                    var installed = await Adb.RunAsync(["-s", Serial, "install", "-r", apk], TimeSpan.FromMinutes(2), ct).ConfigureAwait(false);
+                    if (!installed.Ok) { NeedsUser(LinkState.ApkOutdated, "Companion update failed: " + string.Concat((installed.StdErr + installed.StdOut).Trim().Take(350)) + ". Updates need the original signing key."); return; }
+                    version = await Adb.PackageVersionAsync(Serial, Package, ct).ConfigureAwait(false);
+                }
+            }
             if (version is null) { NeedsUser(LinkState.ApkMissing, "PixelBridge app not installed on the phone"); return; }
             if (version != ExpectedAppVersion) { NeedsUser(LinkState.ApkOutdated, $"phone app {version}, PC expects {ExpectedAppVersion}"); return; }
 
@@ -421,7 +457,11 @@ public sealed class DeviceSession : IAsyncDisposable
     {
         lock (_sensorUsers)
         {
-            if (_sensorUsers.Count > 0 && !_sensorsPaused) StartStream("sensors", new { rateHz = _settings.SensorRateHz });
+            if (_sensorUsers.Count > 0 && !_sensorsPaused)
+            {
+                if (_sensorUsers.SetEquals(new[]{"compass"})) StartStream("sensors", new { rateHz = 10, types = new[]{1,2,9,11} });
+                else StartStream("sensors", new { rateHz = _settings.SensorRateHz });
+            }
             else StopStream("sensors");
         }
     }

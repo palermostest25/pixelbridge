@@ -41,8 +41,10 @@ class BridgeService : Service() {
     private lateinit var camera: CameraStreamer
     private lateinit var mic: MicStreamer
     private lateinit var location: dev.pixelbridge.app.sensors.LocationStreamer
+    private lateinit var phone: dev.pixelbridge.app.phone.PhoneBridge
     private lateinit var radio: dev.pixelbridge.app.radio.RadioBridge
     private var started = false
+    private var mediaForegroundAllowed = false
     @Volatile private var paused = false
     @Volatile private var lastHeartbeatMs = 0L
 
@@ -72,6 +74,9 @@ class BridgeService : Service() {
         radio = dev.pixelbridge.app.radio.RadioBridge(this,
             { _, j -> control.send(Frame.json(Frame.RADIO_RESPONSE, j.toString())) },
             { j -> telemetry.send(Frame.json(Frame.RADIO_EVENT, j.toString(), SystemClock.elapsedRealtimeNanos())) })
+        phone = dev.pixelbridge.app.phone.PhoneBridge(this,
+            { j -> control.send(Frame.json(Frame.RADIO_RESPONSE, j.toString())) },
+            { j -> if (!paused) telemetry.send(Frame.json(Frame.RADIO_EVENT, j.toString(), SystemClock.elapsedRealtimeNanos())) })
         NotificationRelayService.sink = { j ->
             if (!paused) telemetry.send(Frame.json(Frame.NOTIFICATION_EVENT, j.toString(), SystemClock.elapsedRealtimeNanos()))
         }
@@ -79,6 +84,9 @@ class BridgeService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_BOOT && started) return START_NOT_STICKY
+        if (intent?.action == ACTION_BOOT) mediaForegroundAllowed = false
+        else if (intent?.action == null) mediaForegroundAllowed = true
         when (intent?.action) {
             ACTION_STOP -> { stopEverything(); stopSelf(); return START_NOT_STICKY }
             ACTION_PAUSE, ACTION_RESUME -> {
@@ -107,6 +115,7 @@ class BridgeService : Service() {
                 Log.e(TAG, lastError!!)
             }
         }
+        phone.refreshPermissions()
         notifyUi()
         return START_NOT_STICKY
     }
@@ -114,6 +123,7 @@ class BridgeService : Service() {
     override fun onDestroy() {
         stopEverything()
         radio.shutdown()
+        phone.close()
         control.close(); video.close(); audio.close(); telemetry.close()
         NotificationRelayService.sink = null
         if (instance === this) instance = null
@@ -123,9 +133,9 @@ class BridgeService : Service() {
 
     private fun fgsTypes(): Int {
         var t = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-        if (granted(Manifest.permission.CAMERA)) t = t or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
-        if (granted(Manifest.permission.RECORD_AUDIO)) t = t or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-        if (granted(Manifest.permission.ACCESS_FINE_LOCATION)) t = t or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        if (mediaForegroundAllowed && granted(Manifest.permission.CAMERA)) t = t or ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+        if (mediaForegroundAllowed && granted(Manifest.permission.RECORD_AUDIO)) t = t or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        if (mediaForegroundAllowed && granted(Manifest.permission.ACCESS_FINE_LOCATION)) t = t or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
         return t
     }
 
@@ -144,6 +154,7 @@ class BridgeService : Service() {
             // Host gone (unplug, ADB reset or app exit): release camera/mic/sensors immediately.
             stopStreams("host-disconnected")
             radio.reset()
+            phone.reset()
             notifyUi()
         }
 
@@ -159,7 +170,7 @@ class BridgeService : Service() {
                 Frame.STOP_STREAM -> handleStop(JSONObject(frame.text()).getString("kind"))
                 Frame.REQUEST_IDR -> camera.requestIdr()
                 Frame.RADIO_REQUEST -> if (paused) channel.send(Frame.json(Frame.RADIO_RESPONSE, JSONObject().put("id", JSONObject(frame.text()).optInt("id"))
-                    .put("ok", false).put("error", "paused").put("message", "Paused from the phone").toString())) else radio.handle(JSONObject(frame.text()))
+                    .put("ok", false).put("error", "paused").put("message", "Paused from the phone").toString())) else { val request = JSONObject(frame.text()); if (dev.pixelbridge.app.phone.PhoneBridge.handles(request.optString("op"))) phone.handle(request) else radio.handle(request) }
                 else -> channel.send(Frame.json(Frame.ERROR, JSONObject().put("code", "protocol")
                     .put("message", "unexpected type ${frame.type}").put("recoverable", true).toString()))
             }
@@ -176,7 +187,8 @@ class BridgeService : Service() {
         }
         when (kind) {
             "sensors" -> {
-                sensors.start(o.optInt("rateHz", 50))
+                val types = o.optJSONArray("types")?.let { a -> (0 until a.length()).map { a.optInt(it) }.toSet() }
+                sensors.start(o.optInt("rateHz", 50), types)
                 controlEvent(Frame.STREAM_STARTED, JSONObject().put("kind", "sensors").put("rateHz", o.optInt("rateHz", 50)))
             }
             "video" -> {
@@ -229,6 +241,7 @@ class BridgeService : Service() {
         .put("notificationAccess", NotificationRelayService.connected)
         .put("tetheringStatus", "not-evaluated-by-app")
         .put("radio", radio.capabilities())
+        .put("phone", phone.capabilities())
         .put("android", JSONObject().put("sdk", Build.VERSION.SDK_INT).put("release", Build.VERSION.RELEASE)
             .put("build", Build.ID).put("model", Build.MODEL).put("device", Build.DEVICE))
 
@@ -267,6 +280,7 @@ class BridgeService : Service() {
 
     private fun pauseAll() {
         paused = true
+        phone.reset(); radio.reset()
         camera.stop("paused"); mic.stop("paused"); sensors.stop(); location.stop()
         publishStatus()
     }
@@ -310,6 +324,7 @@ class BridgeService : Service() {
         private const val CHANNEL = "bridge"
         private const val NOTIFICATION_ID = 1
         const val THERMAL_LIMIT_C = 43.0
+        const val ACTION_BOOT = "dev.pixelbridge.app.BOOT"
         const val ACTION_STOP = "dev.pixelbridge.app.STOP"
         const val ACTION_PAUSE = "dev.pixelbridge.app.PAUSE"
         const val ACTION_RESUME = "dev.pixelbridge.app.RESUME"
