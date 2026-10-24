@@ -12,6 +12,7 @@ public sealed class AppModel : IAsyncDisposable
     public BridgeSettings Settings { get; } = BridgeSettings.Load();
     public DeviceSession Session { get; }
     public PhoneWorkspace Phone { get; }
+    public UsbCallAudio CallAudio { get; }
     public PhoneCommands Commands { get; }
     public CompassTracker Compass { get; } = new();
     public volatile bool CompassVisible;
@@ -47,6 +48,8 @@ public sealed class AppModel : IAsyncDisposable
         if (string.IsNullOrEmpty(Settings.ApiToken)) { Settings.ApiToken = SensorApiServer.NewToken(); Settings.Save(); }
         Session = new DeviceSession(Settings);
         Phone = new PhoneWorkspace(Session);
+        CallAudio = new UsbCallAudio(Session, () => new CallAudioDevice());
+        CallAudio.SetEnabled(Settings.UseComputerCallAudio);
         Phone.ConfigureNotifications(Settings.NotificationsEnabled, Settings.NotificationShowContent);
         Commands = new PhoneCommands(Session);
         UsbSharing = new UsbSharing(Session);
@@ -134,6 +137,7 @@ public sealed class AppModel : IAsyncDisposable
 
     public void SetPrivacy(bool on)
     {
+        CallAudio.SetAllowed(!on);
         Privacy = on;
         Phone.SetEnabled(!on);
         if (on) Compass.Reset();
@@ -194,6 +198,7 @@ public sealed class AppModel : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        CallAudio.Dispose();
         Video.Dispose();
         await Mic.DisableAsync();
         if (Api != null) await Api.DisposeAsync();

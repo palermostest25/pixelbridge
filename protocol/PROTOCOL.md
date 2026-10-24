@@ -202,7 +202,7 @@ These operations use the authenticated `RADIO_REQUEST` / `RADIO_RESPONSE` envelo
 
 | op | args | result |
 |---|---|---|
-| `phone.status` | — | `{smsSupported,dialer,permissions:{readSms,sendSms,contacts,callLog,callPhone,phoneState},calls:{calls:[],muted,route},callAudio:"phone",notificationReplies}` |
+| `phone.status` | — | `{smsSupported,dialer,permissions:{readSms,sendSms,contacts,callLog,callPhone,phoneState},accounts:[{id,name,default}],defaultAccountId,calls:{calls:[],muted,route,endpoints:[],canAddCall},callAudio:"phone",notificationReplies}` |
 | `phone.watch` | `{enabled}` | Same as status; observes SMS, contacts and call-log changes only while enabled |
 | `contacts.list` | `{query?,limit?:1..100}` | `{contacts:[{id,name,number}]}` |
 | `sms.threads` | — | `{threads:[{id,address,preview,dateMs,incoming,unread}],format:"sms"}`; up to 60 threads from 2000 recent messages |
@@ -210,11 +210,11 @@ These operations use the authenticated `RADIO_REQUEST` / `RADIO_RESPONSE` envelo
 | `sms.send` | `{number,text,token,subscriptionId?}` | Send receipt; token is 16–80 letters, digits, underscores or hyphens (desktop uses 32 hexadecimal characters); at most 12000 characters |
 | `sms.receipt` | `{token}` | `{state:"queued|sent|delivered|failed|unknown",token?,error?}` |
 | `phone.history` | — | `{calls:[{id,number,name,dateMs,durationSeconds,type}]}`; up to 75 |
-| `phone.call` | `{number}` | `{state:"requested"}` |
-| `phone.answer`, `phone.end`, `phone.hold`, `phone.unhold` | `{callId}` | `{state:"requested"}`; requires default Phone role |
+| `phone.call` | `{number,accountId?}` | `{state:"requested"}`; explicit SIM required if multiple lines have no default; account IDs come from status |
+| `phone.answer`, `phone.end`, `phone.reject`, `phone.hold`, `phone.unhold`, `phone.merge`, `phone.swap`, `phone.split` | `{callId}` | `{state:"requested"}`; requires default Phone role and the relevant call capability |
 | `phone.dtmf` | `{callId,digit:"0..9|*|#"}` | Same; tone stops after a short interval |
 | `phone.mute` | `{enabled}` | Same |
-| `phone.route` | `{route:"phone|speaker|bluetooth"}` | Same; route must be available |
+| `phone.route` | `{endpointId?,route?:"phone|speaker|bluetooth|wired|streaming"}` | Same; endpoint IDs come from the current snapshot; unavailable/stale endpoints are rejected |
 | `notifications.list` | — | `{notifications:[{key,appLabel,senderDisplay,text,redacted,canReply,postedMs}]}` |
 | `notifications.reply` | `{key,text}` | `{state:"requested"}`; requires notification access, phone content opt-in and an active reply action |
 | `notifications.dismiss` | `{key}` | `{}` |
@@ -225,6 +225,19 @@ These operations use the authenticated `RADIO_REQUEST` / `RADIO_RESPONSE` envelo
 | `tools.vibrate` | — | `{}`; half-second vibration |
 | `tools.apps` | — | `{apps:[{name,component}]}`; up to 150 launcher entries |
 
-Events: `phone.changed` coalesces provider changes; `phone.calls` carries the current calls/mute/route snapshot; `phone.error` carries asynchronous call failures; `sms.receipt` carries multipart send/delivery progress; `notifications.removed {key}` removes stale entries. Call audio remains on the phone. Sending the same SMS token twice never submits it again, and changing its payload is rejected. The phone retains at most 150 receipts/fingerprints without message bodies. If a send acknowledgement is lost, query its receipt; do not invent a new token to retry it automatically.
+Events: `phone.changed` coalesces provider changes; `phone.calls` carries the current calls/mute/route snapshot; `phone.error` carries asynchronous call failures; `sms.receipt` carries multipart send/delivery progress; `notifications.removed {key}` removes stale entries. These control messages do not carry audio; optional USB call audio uses the separate pipe below. Sending the same SMS token twice never submits it again, and changing its payload is rejected. The phone retains at most 150 receipts/fingerprints without message bodies. If a send acknowledgement is lost, query its receipt; do not invent a new token to retry it automatically.
+
+From app 0.4.1, call snapshots include `endpoints:[{id,name,route,selected}]`, `canAddCall`, and per-call `canMerge`, `canSwap`, `isConference`. Android 14+ uses `InCallService` endpoint/mute callbacks and `requestCallEndpointChange`; hosts display confirmed state, not an optimistic toggle. An explicit stale `callId` never falls back to a different call. Outgoing CallStyle notifications are attached to a `phoneCall` foreground service; an OS rejection falls back to an ordinary notification and must not crash the dialer.
 
 The desktop uses serial-scoped ADB for explicit app launch, display, file transfer and confirmed reboot actions. The protected `.phone.SetupActivity` accepts only the named setup features `communications`, `calling` and `notifications`; Android owns the resulting permission and role dialogs. Setup and pairing entry points require the shell/system `DUMP` permission.
+
+
+## 11. Optional USB call audio (app 0.4.1)
+
+A desktop may launch `dev.pixelbridge.app.phone.ShellCallAudio` using `app_process` from the installed companion APK through its existing, serial-scoped authorized ADB shell. This is not a network service and does not grant privileged permissions to the installed application. Android 13+ system APIs `isPstnCallAudioInterceptable`, `getCallDownlinkExtractionAudioRecord` and `getCallUplinkInjectionAudioTrack` are invoked as the real shell UID/package. Availability depends on the phone implementation. `--probe` returns `{supported:bool}` without opening capture.
+
+For a live call, stdout begins with bytes `50 42 41 31` (`PBA1`), then big-endian int32 sample rate `16000` and channel count `1`. Both directions then use a one-byte type and big-endian int32 payload length, capped at 6400 bytes. Type 1 is PCM16 little-endian mono; type 2 is a one-byte uplink mute flag; type 3 is a UTF-8 failure message from the phone. Type 4 is an optional 24-byte diagnostic frame: six big-endian int32 values for peak microphone RMS, microphone samples accepted, uplink playback position, phone microphone mute (0/1), audio mode, and routed device type. It contains counters only; clients may skip it after checking its length. Invalid lengths, odd PCM lengths and truncated frames terminate the stream. The desktop bounds both microphone and playback queues and substitutes zero samples for its respective mute. No audio is retained on disk or placed in logs.
+
+Desktop clients wait for the first downlink frame before forwarding microphone audio, so phone startup cannot prefill the USB pipe with old speech. The phone drains USB independently of telephony playback, retaining at most 200 ms of queued speech and discarding samples that waited longer than 200 ms. Its AudioTrack requests a 40 ms effective buffer and a 20 ms start threshold, subject to hardware minimums. These are buffering targets, not end-to-end latency guarantees.
+
+The helper owns a `MODE_CALL_REDIRECT` request only during the call, and releases that request on exit to restore Telecom’s phone audio route. It stops when the call ends, stdin closes, or microphone frames stop arriving for five seconds. Desktop clients stop the pipe and computer audio devices on hold, call end, disconnect or privacy mode. Failure must leave the cellular call usable on the phone/headset, with an explicit desktop audio error.

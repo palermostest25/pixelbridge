@@ -76,60 +76,8 @@ struct MessagesView: View {
                 }.padding(16).frame(minWidth: 350)
             }.frame(height: 440).background(BridgeStyle.surface, in: RoundedRectangle(cornerRadius: 12)).clipShape(RoundedRectangle(cornerRadius: 12))
             Text("SMS uses your phone’s carrier plan. RCS and other messaging apps can be replied to from Notifications when they provide Android’s reply action.").font(.caption).foregroundStyle(.secondary)
-        }.task { await phone.enter("messages") }.onDisappear { phone.leave() }
+        }.task { await phone.enter("messages") }.onDisappear { phone.leave("messages") }
             .onChange(of: phone.selectedThread) { _, id in guard let id else { return }; number = phone.threads.first { $0.id == id }?.text("address") ?? ""; Task { await phone.loadMessages(id) } }
-    }
-}
-
-struct CallsView: View {
-    @EnvironmentObject var model: AppModel
-    @EnvironmentObject var phone: PhoneWorkspaceModel
-    @EnvironmentObject var session: DeviceSession
-    @State private var number = ""
-    @State private var tone = ""
-    var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            PhoneFeatureNotice()
-            HStack(spacing: 14) {
-                Image(systemName: "phone").font(.title2).foregroundStyle(BridgeStyle.accent)
-                TextField("Phone number", text: $number).textFieldStyle(.roundedBorder).font(.title3).frame(maxWidth: 420)
-                Button("Call") { Task { await phone.call(number) } }.buttonStyle(.borderedProminent).disabled(!session.isConnected || number.trimmingCharacters(in: .whitespaces).isEmpty)
-                Spacer()
-                Button("Refresh", systemImage: "arrow.clockwise") { Task { await phone.refresh() } }.disabled(!session.isConnected || phone.busy)
-            }
-            Text("Call audio stays on the phone, its speaker or a Bluetooth headset. USB microphone streaming cannot carry a cellular call’s audio.").font(.callout).foregroundStyle(.secondary)
-            if !phone.dialer {
-                SettingRow(icon: "phone.badge.checkmark", title: "Enable incoming-call controls", subtitle: "On the phone, choose PixelBridge as the default Phone app to answer, end, hold and mute calls here.") {
-                    Button("Open setup") { Task { await phone.openSetup("calling"); model.openPhoneScreen() } }.disabled(!session.isConnected)
-                }
-            }
-            ForEach(phone.calls) { call in
-                Card {
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack { Label(call.text("number"), systemImage: call.text("state") == "ringing" ? "phone.arrow.down.left" : "phone.fill").font(.title2.weight(.semibold)); Spacer(); Text(call.text("state").capitalized).foregroundStyle(BridgeStyle.accent) }
-                        HStack(spacing: 12) {
-                            if call.text("state") == "ringing" { Button("Answer") { Task { await phone.callAction("phone.answer", call: call) } }.buttonStyle(.borderedProminent) }
-                            Button("End call", role: .destructive) { Task { await phone.callAction("phone.end", call: call) } }
-                            if call.flag("canHold") { Button(call.text("state") == "held" ? "Resume" : "Hold") { Task { await phone.callAction(call.text("state") == "held" ? "phone.unhold" : "phone.hold", call: call) } } }
-                            Button(phone.muted ? "Unmute" : "Mute") { Task { await phone.callAction("phone.mute", args: ["enabled": !phone.muted]) } }
-                            Menu("Audio: \(phone.callRoute)") { ForEach(["phone", "speaker", "bluetooth"], id: \.self) { route in Button(route.capitalized) { Task { await phone.callAction("phone.route", args: ["route": route]) } } } }
-                        }.disabled(!phone.dialer)
-                        HStack { TextField("Keypad digit (0–9, * or #)", text: $tone).frame(maxWidth: 240); Button("Send tone") { Task { await phone.callAction("phone.dtmf", call: call, args: ["digit": String(tone.prefix(1))]) } }.disabled(!phone.dialer || tone.range(of: "^[0-9*#]$", options: .regularExpression) == nil) }
-                    }
-                }
-            }
-            HStack { Text("Recent calls").font(.headline); Spacer(); Text("Loaded from the phone").font(.caption).foregroundStyle(.secondary) }
-            if phone.history.isEmpty { Text("Your call history appears here after call-log access is enabled.").foregroundStyle(.secondary).padding(.vertical, 16) }
-            ForEach(phone.history) { row in
-                HStack(spacing: 14) {
-                    Image(systemName: Int(row.number("type")) == 3 ? "phone.badge.xmark" : "phone.arrow.up.right").foregroundStyle(Int(row.number("type")) == 3 ? .orange : .secondary).frame(width: 26)
-                    VStack(alignment: .leading, spacing: 4) { Text(row.text("name").isEmpty ? row.text("number") : row.text("name")).fontWeight(.medium); Text(row.text("number")).font(.caption).foregroundStyle(.secondary) }
-                    Spacer(); Text(row.date, format: .dateTime.month(.abbreviated).day().hour().minute()).font(.caption).foregroundStyle(.secondary)
-                    Button("Call") { number = row.text("number"); Task { await phone.call(number) } }.disabled(!session.isConnected)
-                }.padding(.vertical, 9)
-                Divider()
-            }
-        }.task { await phone.enter("calls") }.onDisappear { phone.leave() }
     }
 }
 
@@ -153,7 +101,7 @@ struct ContactsView: View {
                 }.padding(.vertical, 10)
                 Divider()
             }
-        }.task { await phone.enter("contacts") }.onDisappear { phone.leave() }
+        }.task { await phone.enter("contacts") }.onDisappear { phone.leave("contacts") }
             .task(id: search) { do { try await Task.sleep(nanoseconds: 250_000_000) } catch { return }; await phone.searchContacts(search) }
             .sheet(item: $compose) { person in ContactMessageSheet(person: person).environmentObject(phone) }
     }
@@ -195,7 +143,7 @@ struct PhoneNotificationsView: View {
                     }
                 }
             }
-        }.task { await phone.enter("notifications") }.onDisappear { phone.leave() }
+        }.task { await phone.enter("notifications") }.onDisappear { phone.leave("notifications") }
             .sheet(item: $replying) { notice in
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Reply in \(notice.text("appLabel"))").font(.title2.weight(.semibold))

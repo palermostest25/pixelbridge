@@ -10,6 +10,8 @@ public partial class App : Application
 {
     public AppModel Model { get; private set; } = null!;
     private MainWindow? _window;
+    private CancellationTokenSource? _ringCancellation;
+    private System.Diagnostics.Process? _ringProcess;
     private NativeMenuItem SharingMenu => TrayIcon.GetIcons(this)!.Single().Menu!.Items.OfType<NativeMenuItem>().Single(i => i.Header == "USB internet sharing");
     private NativeMenuItem PowerMenu => TrayIcon.GetIcons(this)!.Single().Menu!.Items.OfType<NativeMenuItem>().Single(i => i.Header == "Save power (15 fps)");
 
@@ -21,6 +23,13 @@ public partial class App : Application
         {
             Log.Info($"PixelBridge (Linux) starting on {Environment.OSVersion}");
             Model = new AppModel();
+            Model.Phone.RingingChanged += call => Avalonia.Threading.Dispatcher.UIThread.Post(() => {
+                SilenceCallRing();
+                if (call == null) return;
+                ShowWindow(); _window?.Navigate("calls");
+                _ringCancellation = new CancellationTokenSource();
+                _ = RingAsync(_ringCancellation.Token);
+            });
             Model.Session.PhoneAttached += () => { if (Model.Settings.ShowOnConnect) Avalonia.Threading.Dispatcher.UIThread.Post(ShowWindow); };
             Model.Start();
             PowerMenu.IsChecked = Model.Settings.SavePower;
@@ -44,10 +53,32 @@ public partial class App : Application
 
     private async void Quit_Click(object? sender, EventArgs e)
     {
+        SilenceCallRing();
         _window?.AllowClose();
         await Model.DisposeAsync();
         (ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.Shutdown();
     }
 
     private void ShowWindow() { _window ??= new MainWindow(Model); _window.Show(); _window.Activate(); }
+    private void SilenceCallRing()
+    {
+        _ringCancellation?.Cancel(); _ringCancellation?.Dispose(); _ringCancellation = null;
+        try { if (_ringProcess is { HasExited: false } process) process.Kill(); } catch { }
+    }
+    private async Task RingAsync(CancellationToken cancellation)
+    {
+        try {
+            while (!cancellation.IsCancellationRequested) {
+                var start = new System.Diagnostics.ProcessStartInfo("paplay") { UseShellExecute = false, RedirectStandardError = true };
+                start.ArgumentList.Add(System.IO.Path.Combine(AppContext.BaseDirectory, "CallRing.wav"));
+                using var process = new System.Diagnostics.Process { StartInfo = start };
+                try {
+                    _ringProcess = process; process.Start();
+                    await process.WaitForExitAsync(cancellation);
+                    if (process.ExitCode != 0) throw new IOException("Desktop sound output is unavailable");
+                } finally { if (ReferenceEquals(_ringProcess, process)) _ringProcess = null; }
+            }
+        } catch (OperationCanceledException) { }
+        catch { _window?.ShowToast("Incoming call. Install pulseaudio-utils / enable desktop audio to hear the ringtone."); }
+    }
 }

@@ -18,6 +18,7 @@ public sealed class AppController : IAsyncDisposable
     public BridgeSettings Settings { get; }
     public DeviceSession Session { get; }
     public PhoneWorkspace Phone { get; }
+    public UsbCallAudio CallAudio { get; }
     public PhoneCommands Commands { get; }
     public CompassTracker Compass { get; } = new();
     public volatile bool CompassVisible;
@@ -68,6 +69,8 @@ public sealed class AppController : IAsyncDisposable
         if (string.IsNullOrEmpty(Settings.ApiToken)) { Settings.ApiToken = SensorApiServer.NewToken(); Settings.Save(); }
         Session = new DeviceSession(Settings);
         Phone = new PhoneWorkspace(Session);
+        CallAudio = new UsbCallAudio(Session, () => new CallAudioDevice());
+        CallAudio.SetEnabled(Settings.UseComputerCallAudio);
         Phone.ConfigureNotifications(Settings.NotificationsEnabled, Settings.NotificationShowContent);
         Commands = new PhoneCommands(Session);
         UsbSharing = new UsbSharing(Session);
@@ -185,6 +188,7 @@ public sealed class AppController : IAsyncDisposable
     /// <summary>Pause all acquisition immediately: camera, mic and sensors stop on the phone; virtual camera shows the placeholder.</summary>
     public void SetPrivacy(bool on)
     {
+        CallAudio.SetAllowed(!on);
         PrivacyMode = on;
         Phone.SetEnabled(!on);
         if (on) Compass.Reset();
@@ -434,6 +438,7 @@ public sealed class AppController : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        CallAudio.Dispose();
         Tilt.Enabled = false;
         StopSensorExport();
         StopVideoRecording();

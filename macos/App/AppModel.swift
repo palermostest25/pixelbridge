@@ -41,6 +41,9 @@ final class AppModel: NSObject, ObservableObject {
     let session = DeviceSession()
     lazy var phone = PhoneWorkspaceModel(session: session)
     let compass = CompassModel()
+    let callAudio = USBCallAudio()
+    @Published private(set) var ringingCallID: String?
+    private var callRingtone: NSSound?
     private let decoder = H264Decoder()
     private let sink = CameraSink()
     private let frameProcessor = VideoFrameProcessor()
@@ -172,12 +175,13 @@ final class AppModel: NSObject, ObservableObject {
         session.$state.sink { [weak self] s in
             guard let self else { return }
             if s == .connected {
+                if !self.privacy { Task { await self.refreshCallAudio() } }
                 self.refreshUSBSharing()
                 self.updateSensorDemand()
                 if self.cameraOn { self.startCamera() }
                 if self.micOn { self.startMic() }
                 if self.locationOn { self.startLocation() }
-            } else { self.preview = nil; self.sink.detach() }
+            } else { self.preview = nil; self.sink.detach(); self.updateRinging([]); self.callAudio.update([], muted: false, session: self.session) }
         }.store(in: &bag)
         session.phoneAttached.sink { _ in
             if UserDefaults.standard.object(forKey: "showOnConnect") as? Bool ?? true {
@@ -273,6 +277,9 @@ final class AppModel: NSObject, ObservableObject {
     func setPrivacy(_ on: Bool) {
         privacy = on
         phone.setEnabled(!on)
+        callAudio.setAllowed(!on)
+        if !on { Task { await refreshCallAudio() } }
+        if on { updateRinging([]) }
         if on { compass.reset() }
         if on {
             ["video", "audio", "sensors", "location"].forEach { session.stopStream($0) }
@@ -380,6 +387,10 @@ final class AppModel: NSObject, ObservableObject {
         guard let event = e["event"] as? String else { return }
         let addr = e["address"] as? String ?? ""
         switch event {
+        case "phone.calls":
+            let calls = privacy ? [] : (e["calls"] as? [[String: Any]] ?? [])
+            updateRinging(calls)
+            callAudio.update(calls, muted: e["muted"] as? Bool ?? false, session: session)
         case "ble.scanResult":
             let rssi = e["rssi"] as? Int ?? -100
             if let i = bleDevices.firstIndex(where: { $0.address == addr }) {
@@ -404,6 +415,23 @@ final class AppModel: NSObject, ObservableObject {
             }
         default: break
         }
+    }
+
+    private func updateRinging(_ calls: [[String: Any]]) {
+        let id = calls.first { $0["state"] as? String == "ringing" }?["id"] as? String
+        guard id != ringingCallID else { return }
+        callRingtone?.stop(); ringingCallID = id
+        if id != nil {
+            callRingtone = Bundle.main.url(forResource: "CallRing", withExtension: "wav").flatMap { NSSound(contentsOf: $0, byReference: true) } ?? NSSound(named: NSSound.Name("Glass"))
+            callRingtone?.loops = true; callRingtone?.play()
+        }
+    }
+    func silenceCallRingtone() { callRingtone?.stop() }
+    private func refreshCallAudio() async {
+        await phone.refreshCallStatus()
+        guard !privacy else { return }
+        callAudio.update(phone.calls.map(\.values), muted: phone.muted, session: session)
+        updateRinging(phone.calls.map(\.values))
     }
 
     private func update(_ addr: String, _ f: (inout BleDevice) -> Void) {
@@ -450,6 +478,7 @@ final class AppModel: NSObject, ObservableObject {
 
     @Published var phoneScreenStatus = ""
     private var phoneScreenProcess: Process?
+    func closePhoneScreen() { if phoneScreenProcess?.isRunning == true { phoneScreenProcess?.terminate() }; phoneScreenProcess = nil }
     func openPhoneScreen() {
         if let process = phoneScreenProcess, process.isRunning {
             NSRunningApplication(processIdentifier: process.processIdentifier)?.activate(options: [.activateAllWindows])

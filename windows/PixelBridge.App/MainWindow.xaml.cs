@@ -49,6 +49,7 @@ public partial class MainWindow : Window
     private bool _allowClose, _switching;
 
     public static MainWindow? Current { get; private set; }
+    public void ShowCalls() { Nav.SelectedIndex = 2; }
 
     public MainWindow(AppController controller)
     {

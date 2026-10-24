@@ -18,6 +18,7 @@ struct PhoneEntry: Identifiable {
     private var bag = Set<AnyCancellable>()
     private var epoch = 0, messageGeneration = 0, contactGeneration = 0
     private var enabled = true, watching = false
+    private var contactQuery = ""
     private var pendingToken: String?, pendingFingerprint: String?
     @Published var threads: [PhoneEntry] = []
     @Published var messages: [PhoneEntry] = []
@@ -37,6 +38,9 @@ struct PhoneEntry: Identifiable {
     @Published var downloads: [String] = []
     @Published var transferStatus = ""
     @Published var page = ""
+    var accounts: [PhoneEntry] { rows(status, "accounts") }
+    var defaultAccountID: String { status["defaultAccountId"] as? String ?? "" }
+    var callEndpoints: [PhoneEntry] { rows(status["calls"] as? [String: Any] ?? [:], "endpoints") }
     var dialer: Bool { status["dialer"] as? Bool ?? false }
     var muted: Bool { (status["calls"] as? [String: Any])?["muted"] as? Bool ?? false }
     var callRoute: String { (status["calls"] as? [String: Any])?["route"] as? String ?? "phone" }
@@ -79,7 +83,8 @@ struct PhoneEntry: Identifiable {
         }
         await refresh()
     }
-    func leave() {
+    func leave(_ leavingPage: String? = nil) {
+        if let leavingPage, leavingPage != page { return }
         page = ""
         if watching { watching = false; Task { _ = try? await session.radio("phone.watch", ["enabled": false]) } }
     }
@@ -89,7 +94,7 @@ struct PhoneEntry: Identifiable {
         switch page {
         case "messages": await refreshThreads(); if let selectedThread { await loadMessages(selectedThread) }
         case "calls": await perform { status = try await request("phone.status"); applyCalls(status["calls"] as? [String: Any] ?? [:]); history = rows(try await request("phone.history"), "calls") }
-        case "contacts": await searchContacts("")
+        case "contacts": await searchContacts(contactQuery)
         case "tools": await perform { tools = try await request("tools.status"); apps = rows(try await request("tools.apps"), "apps") }; await refreshDownloads()
         case "notifications": await perform { notifications = rows(try await request("notifications.list"), "notifications") }
         default: break
@@ -106,6 +111,7 @@ struct PhoneEntry: Identifiable {
         }
     }
     func searchContacts(_ query: String) async {
+        contactQuery = query
         contactGeneration += 1; let generation = contactGeneration
         await perform { let result = try await request("contacts.list", ["query": query, "limit": 100]); if generation == contactGeneration { contacts = rows(result, "contacts") } }
     }
@@ -123,7 +129,12 @@ struct PhoneEntry: Identifiable {
             let response = try await request("sms.send", ["number": number, "text": text, "token": token]); sendStatus = receiptLabel(response)
         }
     }
-    func call(_ number: String) async { await perform { _ = try await request("phone.call", ["number": number]) } }
+    func call(_ number: String, accountID: String? = nil) async {
+        var args: [String: Any] = ["number": number]
+        if let id = accountID, !id.isEmpty { args["accountId"] = id }
+        await perform { _ = try await request("phone.call", args) }
+    }
+    func refreshCallStatus() async { await perform { status = try await request("phone.status"); applyCalls(status["calls"] as? [String: Any] ?? [:]) } }
     func callAction(_ op: String, call: PhoneEntry? = nil, args: [String: Any] = [:]) async {
         var a = args; if let call { a["callId"] = call.id }
         await perform { _ = try await request(op, a) }
@@ -142,7 +153,7 @@ struct PhoneEntry: Identifiable {
         switch row["event"] as? String {
         case "phone.calls": applyCalls(row)
         case "phone.error": error = row["message"] as? String ?? "Phone action failed"
-        case "phone.changed": if ["messages", "calls", "contacts"].contains(page) { Task { await refresh() } }
+        case "phone.changed": if ["messages", "calls", "contacts", "notifications"].contains(page) { Task { await refresh() } }
         case "sms.receipt": if row["token"] as? String == pendingToken { sendStatus = receiptLabel(row) }
         case "notifications.removed": notifications.removeAll { $0.id == row["key"] as? String }
         default: break

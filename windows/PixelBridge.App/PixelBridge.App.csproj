@@ -11,7 +11,7 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
     <AssemblyName>PixelBridge</AssemblyName>
-    <Version>0.4.0</Version>
+    <Version>0.4.1</Version>
     <ApplicationIcon>pixelbridge.ico</ApplicationIcon>
     <NoWarn>$(NoWarn);WPF0001</NoWarn>
   </PropertyGroup>
@@ -22,6 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Content Include="..\..\assets\CallRing.wav" Link="CallRing.wav" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\PixelBridge.Core\PixelBridge.Core.csproj" />
     <ProjectReference Include="..\PixelBridge.Media\PixelBridge.Media.csproj" />
   </ItemGroup>

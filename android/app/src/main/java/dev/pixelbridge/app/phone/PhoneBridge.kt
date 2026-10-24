@@ -24,6 +24,8 @@ import android.provider.CallLog
 import android.provider.ContactsContract
 import android.provider.Telephony
 import android.telecom.TelecomManager
+import android.telecom.PhoneAccountHandle
+import java.util.UUID
 import android.telephony.SmsManager
 import android.telephony.SubscriptionManager
 import dev.pixelbridge.app.notifications.NotificationRelayService
@@ -39,6 +41,7 @@ class PhoneBridge(private val context: Context, private val respond: (JSONObject
     private val resolver = context.contentResolver
     private val prefs = context.getSharedPreferences("sms-receipts", Context.MODE_PRIVATE)
     private val ledger = SendLedger({ prefs.getString("ledger", "{}") ?: "{}" }, { check(prefs.edit().putString("ledger", it).commit()) { "Could not save SMS receipt; no new message was submitted" } })
+    private val callAccounts = LinkedHashMap<String, PhoneAccountHandle>()
     private var watching = false
     private var ringtone: Ringtone? = null
     private val stopRing = Runnable { ringtone?.stop(); ringtone = null }
@@ -68,12 +71,28 @@ class PhoneBridge(private val context: Context, private val respond: (JSONObject
     }
     fun capabilities(): JSONObject {
         val role = context.getSystemService(RoleManager::class.java)
-        return JSONObject().put("smsSupported", supportsSms())
+        val accounts = availableAccounts()
+        return JSONObject().put("accounts", accounts.getJSONArray("accounts")).put("defaultAccountId", accounts.optString("defaultAccountId")).put("smsSupported", supportsSms())
             .put("dialer", role.isRoleHeld(RoleManager.ROLE_DIALER)).put("calls", CallRegistry.snapshot())
             .put("permissions", JSONObject().put("readSms", granted(Manifest.permission.READ_SMS)).put("sendSms", granted(Manifest.permission.SEND_SMS))
                 .put("contacts", granted(Manifest.permission.READ_CONTACTS)).put("callLog", granted(Manifest.permission.READ_CALL_LOG))
                 .put("callPhone", granted(Manifest.permission.CALL_PHONE)).put("phoneState", granted(Manifest.permission.READ_PHONE_STATE)))
             .put("callAudio", "phone").put("notificationReplies", NotificationRelayService.connected)
+    }
+    @Synchronized private fun availableAccounts(): JSONObject {
+        val rows = JSONArray(); callAccounts.clear()
+        if (!granted(Manifest.permission.READ_PHONE_STATE)) return JSONObject().put("accounts", rows)
+        val telecom = context.getSystemService(TelecomManager::class.java)
+        val preferred = telecom.getDefaultOutgoingPhoneAccount("tel")
+        var defaultId = ""
+        for (account in telecom.callCapablePhoneAccounts) {
+            val details = telecom.getPhoneAccount(account) ?: continue
+            val id = UUID.nameUUIDFromBytes((account.componentName.flattenToString()+":"+account.id).toByteArray()).toString()
+            callAccounts[id] = account
+            if (account == preferred) defaultId = id
+            rows.put(JSONObject().put("id", id).put("name", details.label?.toString()?.take(100) ?: "Phone line").put("default", account == preferred))
+        }
+        return JSONObject().put("accounts", rows).put("defaultAccountId", defaultId)
     }
     private fun dispatch(op: String, a: JSONObject): JSONObject? = when (op) {
         "phone.status" -> capabilities()
@@ -87,11 +106,16 @@ class PhoneBridge(private val context: Context, private val respond: (JSONObject
         "phone.call" -> {
             need(Manifest.permission.CALL_PHONE)
             val number = a.getString("number").trim(); require(number.matches(Regex("[+0-9*#() .-]{1,80}"))) { "Enter a phone number" }
-            main.post { try { context.getSystemService(TelecomManager::class.java).placeCall(Uri.fromParts("tel", number, null), android.os.Bundle()) }
+            val accounts = availableAccounts()
+            val chosen = synchronized(this) {
+                CallRules.chooseAccount(callAccounts.keys, accounts.optString("defaultAccountId"), a)?.let { callAccounts[it] }
+            }
+            val extras = android.os.Bundle().apply { chosen?.let { putParcelable(TelecomManager.EXTRA_PHONE_ACCOUNT_HANDLE, it) } }
+            main.post { try { context.getSystemService(TelecomManager::class.java).placeCall(Uri.fromParts("tel", number, null), extras) }
                 catch (e: Exception) { event(JSONObject().put("event", "phone.error").put("message", e.message)) } }
             JSONObject().put("state", "requested")
         }
-        "phone.answer", "phone.end", "phone.hold", "phone.unhold", "phone.dtmf", "phone.mute", "phone.route" -> {
+        "phone.answer", "phone.end", "phone.reject", "phone.hold", "phone.unhold", "phone.dtmf", "phone.mute", "phone.route", "phone.merge", "phone.swap", "phone.split" -> {
             require(context.getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_DIALER)) { "Enable call controls in PixelBridge on the phone, then choose PixelBridge as the default Phone app" }
             CallRegistry.request(op, a, event); JSONObject().put("state", "requested")
         }
@@ -223,7 +247,7 @@ class PhoneBridge(private val context: Context, private val respond: (JSONObject
             }
         return JSONObject().put("apps", rows)
     }
-    fun refreshPermissions() { handler.post { if (watching) setWatching(true) } }
+    fun refreshPermissions() { handler.post { if (watching) setWatching(true); handler.removeCallbacks(refreshNotice); handler.postDelayed(refreshNotice, 150) } }
     fun reset() { handler.post { setWatching(false); handler.removeCallbacks(refreshNotice); try { setTorch(false) } catch (_: Exception) {} }; main.post { main.removeCallbacks(stopRing); stopRing.run() } }
     fun close() { reset(); handler.post { worker.quitSafely() }; if (events === event) events = null }
     companion object {

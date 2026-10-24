@@ -14,15 +14,11 @@ struct PixelBridgeApp: App {
                 .environmentObject(model.session)
                 .environmentObject(model.phone)
                 .frame(minWidth: 900, minHeight: 600)
+                .onAppear { delegate.installCallMenu(model) }
         }
         .defaultSize(width: 1120, height: 780)
         .windowToolbarStyle(.unified)
-
-        MenuBarExtra {
-            MenuBarContent().environmentObject(model).environmentObject(model.session)
-        } label: {
-            Image(systemName: model.session.isConnected ? "iphone.radiowaves.left.and.right" : "iphone.slash")
-        }
+        .commands { CommandGroup(after: .newItem) { Button("Show call controls") { delegate.showCallMenu() }.keyboardShortcut("c", modifiers: [.command, .shift]) } }
 
         Settings { SettingsView().environmentObject(model).environmentObject(model.session) }
     }
@@ -55,6 +51,11 @@ struct MenuBarContent: View {
 /// Closing the dashboard leaves the status item and active bridge alive, without a Dock icon.
 @MainActor final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
     static var reopen: (() -> Void)?
+    private var callMenu: CallStatusItem?
+    private weak var model: AppModel?
+    func installCallMenu(_ model: AppModel) { guard callMenu == nil else { return }; self.model = model; callMenu = CallStatusItem(model: model) }
+    func showCallMenu() { callMenu?.show() }
+    func applicationWillTerminate(_ notification: Notification) { model?.callAudio.stop(); model?.silenceCallRingtone(); model?.closePhoneScreen() }
     private var windowObservers: [NSObjectProtocol] = []
     func applicationDidFinishLaunching(_ notification: Notification) {
         let center = NotificationCenter.default

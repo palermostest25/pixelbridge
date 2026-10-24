@@ -18,15 +18,18 @@ public sealed class PhoneHubView : UserControl
     private readonly TextBlock _notice=new(){TextWrapping=TextWrapping.Wrap},_receipt=new(){TextWrapping=TextWrapping.Wrap},_detail=new(){TextWrapping=TextWrapping.Wrap};
     private readonly ListBox _list=new(),_messages=new(),_apps=new(),_files=new();
     private readonly TextBox _number=new(){PlaceholderText="Phone number"},_draft=new(){PlaceholderText="Write a message"},_search=new(){PlaceholderText="Search names or numbers"},_tone=new(){PlaceholderText="Digit",MaxLength=1,Width=65};
-    private readonly Button _send=new(){Content="Send SMS"},_answer=new(){Content="Answer"},_end=new(){Content="End call"},_hold=new(){Content="Hold"},_mute=new(){Content="Mute"};
-    private readonly ComboBox _route=new();
+    private readonly Button _send=new(){Content="Send SMS"},_answer=new(){Content="Answer"},_end=new(){Content="End call"},_hold=new(){Content="Hold"},_mute=new(){Content="Mute"},_merge=new(){Content="Merge calls"},_swap=new(){Content="Swap calls"};
+    private readonly ComboBox _route=new(), _account=new();
     private readonly Slider _volume=new(){Minimum=0,Maximum=15,Width=210,TickFrequency=1,IsSnapToTickEnabled=true};
     private readonly ToggleSwitch _flash=new(){Content="Flashlight"};
+    private readonly CheckBox _computerAudio=new();
+    private readonly TextBlock _callAudioStatus=new(){TextWrapping=TextWrapping.Wrap};
+    private readonly Button _listeningMute=new(){Content="Mute speakers"};
     private readonly DispatcherTimer _searchTimer=new(){Interval=TimeSpan.FromMilliseconds(280)};
     private readonly DispatcherTimer _volumeTimer=new(){Interval=TimeSpan.FromMilliseconds(220)};
     private bool _volumePending;
     private bool _active,_loading=true,_needsLoad=true,_working;
-    private object? _rows,_messageRows,_appRows,_notificationRows;
+    private object? _rows,_messageRows,_appRows,_notificationRows,_accountRows,_endpointRows;
     private PhoneWorkspace Phone=>_model.Phone;
     private sealed record Row(string Key,string Title,string Detail,object Value);
     public PhoneHubView(AppModel model,string mode)
@@ -76,14 +79,25 @@ public sealed class PhoneHubView : UserControl
     private void BuildCalls()
     {
         _root.Children.Add(Action("Enable incoming-call controls…",async()=>{await _model.Commands.OpenSetupAsync("calling");_model.LaunchScrcpy();}));
-        var dial=new StackPanel{Orientation=Orientation.Horizontal,Spacing=12};_number.Width=320;_number.FontSize=18;dial.Children.Add(_number);dial.Children.Add(Action("Call",async()=>await Phone.CallAsync(_number.Text??"")));_root.Children.Add(dial);
-        _root.Children.Add(Hint("Call audio stays on the phone, speaker or Bluetooth headset. Enable PixelBridge as the default Phone app on Android to answer, end, hold and mute calls here."));
+        var dial=new StackPanel{Orientation=Orientation.Horizontal,Spacing=12};_number.Width=320;_number.FontSize=18;dial.Children.Add(_number);dial.Children.Add(Action("Call",async()=>await Phone.CallAsync(_number.Text??"",(_account.SelectedItem as PhoneAccount)?.Id)));_root.Children.Add(dial);
+        _account.MinWidth=240;_account.PlaceholderText="Choose SIM / phone line";_account.HorizontalAlignment=HorizontalAlignment.Left;_root.Children.Add(_account);
+        _computerAudio.Content="Use computer microphone and speakers";_computerAudio.IsCheckedChanged+=(_,_)=>{if(_loading)return;_model.Settings.UseComputerCallAudio=_computerAudio.IsChecked==true;_model.Settings.Save();_model.CallAudio.SetEnabled(_computerAudio.IsChecked==true);};_root.Children.Add(_computerAudio);
+        _root.Children.Add(_callAudioStatus);_listeningMute.Click+=(_,_)=>_model.CallAudio.ToggleListeningMute();_listeningMute.HorizontalAlignment=HorizontalAlignment.Left;_root.Children.Add(_listeningMute);
         _root.Children.Add(Prepare(_list,140));var actions=new WrapPanel();
-        foreach(var b in new[]{_answer,_end,_hold,_mute}){b.Margin=new(0,0,8,8);actions.Children.Add(b);}
+        foreach(var b in new[]{_answer,_end,_hold,_mute,_merge,_swap}){b.Margin=new(0,0,8,8);actions.Children.Add(b);}
         _answer.Click+=async(_,_)=>await Phone.CallActionAsync("phone.answer",SelectedCall()?.Id);_end.Click+=async(_,_)=>await Phone.CallActionAsync("phone.end",SelectedCall()?.Id);
         _hold.Click+=async(_,_)=>await Phone.CallActionAsync(SelectedCall()?.State=="held"?"phone.unhold":"phone.hold",SelectedCall()?.Id);_mute.Click+=async(_,_)=>await Phone.CallActionAsync("phone.mute",args:new{enabled=!Phone.Muted});
-        _route.ItemsSource=new[]{"phone","speaker","bluetooth"};_route.SelectedIndex=0;_route.Margin=new(0,0,8,8);actions.Children.Add(_route);_route.SelectionChanged+=async(_,_)=>{if(!_loading&&Phone.Calls.Count>0)await Phone.CallActionAsync("phone.route",args:new{route=_route.SelectedItem?.ToString()??"phone"});};
-        _tone.Margin=new(0,0,8,8);actions.Children.Add(_tone);actions.Children.Add(Action("Send keypad tone",async()=>{if((_tone.Text??"").Length==1&&"0123456789*#".Contains(_tone.Text!))await Phone.CallActionAsync("phone.dtmf",SelectedCall()?.Id,new{digit=_tone.Text});}));_root.Children.Add(actions);
+        _merge.Click+=async(_,_)=>await Phone.CallActionAsync("phone.merge",SelectedCall()?.Id);_swap.Click+=async(_,_)=>await Phone.CallActionAsync("phone.swap",SelectedCall()?.Id);
+        _route.MinWidth=140;_route.Margin=new(0,0,8,8);actions.Children.Add(_route);_route.SelectionChanged+=async(_,_)=>{if(!_loading&&Phone.Calls.Count>0&&_route.SelectedItem is PhoneEndpoint ep)await Phone.CallActionAsync("phone.route",args:new{endpointId=ep.Id,route=ep.Route});};
+        actions.Children.Add(Action("Silence ring",()=>{Phone.SilenceRinging();return Task.CompletedTask;}));_root.Children.Add(actions);
+        _root.Children.Add(Hint("Use the keypad to dial. During a connected call, it sends tones for menus and extensions."));
+        var keypad=new Avalonia.Controls.Primitives.UniformGrid {Columns=3,Width=240,HorizontalAlignment=HorizontalAlignment.Left};
+        foreach(var digit in "123456789*0#") {
+            string key=digit.ToString();
+            var button=Action(key,async()=>{if(SelectedCall() is {State:"active"} call)await Phone.CallActionAsync("phone.dtmf",call.Id,new{digit=key});else _number.Text+=key;});
+            button.FontSize=22;button.MinHeight=48;button.Margin=new(0,0,8,8);keypad.Children.Add(button);
+        }
+        _root.Children.Add(keypad);
         _root.Children.Add(new TextBlock{Text="Recent calls",FontSize=18,FontWeight=FontWeight.SemiBold});_root.Children.Add(Prepare(_messages,280));_messages.SelectionChanged+=(_,_)=>{if(_messages.SelectedItem is Row{Value:RecentCall row})_number.Text=row.Number;};
     }
     private PhoneCall? SelectedCall()=>(_list.SelectedItem as Row)?.Value as PhoneCall??Phone.Calls.FirstOrDefault();
@@ -141,7 +155,7 @@ public sealed class PhoneHubView : UserControl
         _send.IsEnabled=_model.Session.IsConnected&&!_model.Privacy&&!Phone.Sending&&!string.IsNullOrWhiteSpace(_number.Text)&&!string.IsNullOrWhiteSpace(_draft.Text);_receipt.Text=Phone.SendStatus;
         if(_mode=="messages"){if(!ReferenceEquals(_rows,Phone.Threads)){_rows=Phone.Threads;SetRows(_list,Phone.Threads.Select(x=>new Row(x.Id.ToString(),x.Address,(x.Unread?"Unread · ":"")+x.Preview,x)));}if(!ReferenceEquals(_messageRows,Phone.Messages)){_messageRows=Phone.Messages;SetRows(_messages,Phone.Messages.Select(x=>new Row(x.Id.ToString(),x.Body,(x.Incoming?"Received":"Sent")+" · "+DateTimeOffset.FromUnixTimeMilliseconds(x.DateMs).LocalDateTime.ToString("t"),x)));if(_messages.ItemCount>0)_messages.ScrollIntoView(_messages.ItemCount-1);}}
         if(_mode=="contacts"&&!ReferenceEquals(_rows,Phone.Contacts)){_rows=Phone.Contacts;SetRows(_list,Phone.Contacts.Select(x=>new Row(x.Id+":"+x.Number,x.Name,x.Number,x)));}
-        if(_mode=="calls"){if(!ReferenceEquals(_rows,Phone.Calls)){_rows=Phone.Calls;SetRows(_list,Phone.Calls.Select(x=>new Row(x.Id,x.Number,x.State,x)));}if(!ReferenceEquals(_messageRows,Phone.History)){_messageRows=Phone.History;SetRows(_messages,Phone.History.Select(x=>new Row(x.Id.ToString(),x.Name.Length>0?x.Name:x.Number,x.Number+" · "+DateTimeOffset.FromUnixTimeMilliseconds(x.DateMs).LocalDateTime.ToString("g"),x)));}var call=SelectedCall();_answer.IsEnabled=Phone.Dialer&&call?.State=="ringing";_end.IsEnabled=Phone.Dialer&&call!=null;_hold.IsEnabled=Phone.Dialer&&call?.CanHold==true;_hold.Content=call?.State=="held"?"Resume":"Hold";_mute.IsEnabled=_end.IsEnabled;_mute.Content=Phone.Muted?"Unmute":"Mute";_loading=true;_route.SelectedItem=Phone.CallRoute;_route.IsEnabled=_end.IsEnabled;_loading=false;}
+        if(_mode=="calls"){if(!ReferenceEquals(_rows,Phone.Calls)){_rows=Phone.Calls;SetRows(_list,Phone.Calls.Select(x=>new Row(x.Id,x.Number,x.State,x)));}if(!ReferenceEquals(_messageRows,Phone.History)){_messageRows=Phone.History;SetRows(_messages,Phone.History.Select(x=>new Row(x.Id.ToString(),x.Name.Length>0?x.Name:x.Number,x.Number+" · "+DateTimeOffset.FromUnixTimeMilliseconds(x.DateMs).LocalDateTime.ToString("g"),x)));}_loading=true;_computerAudio.IsChecked=_model.CallAudio.Enabled;_loading=false;_computerAudio.IsEnabled=!_model.Privacy;_callAudioStatus.Text=_model.CallAudio.Status;_listeningMute.IsVisible=_model.CallAudio.Active;_listeningMute.Content=_model.CallAudio.ListeningMuted?"Unmute speakers":"Mute speakers";var call=SelectedCall();_answer.IsEnabled=Phone.Dialer&&call?.State=="ringing";_end.IsEnabled=Phone.Dialer&&call!=null;_hold.IsEnabled=Phone.Dialer&&call?.CanHold==true;_hold.Content=call?.State=="held"?"Resume":"Hold";_mute.IsEnabled=_end.IsEnabled;_mute.Content=Phone.Muted?"Unmute microphone":"Mute microphone";_merge.IsEnabled=Phone.Dialer&&call?.CanMerge==true;_swap.IsEnabled=Phone.Dialer&&call?.CanSwap==true;_loading=true;if(!ReferenceEquals(_endpointRows,Phone.Endpoints)){_endpointRows=Phone.Endpoints;_route.ItemsSource=Phone.Endpoints;}_route.SelectedItem=Phone.Endpoints.FirstOrDefault(x=>x.Selected)??Phone.Endpoints.FirstOrDefault(x=>x.Route==Phone.CallRoute);_route.IsEnabled=_end.IsEnabled;if(!ReferenceEquals(_accountRows,Phone.Accounts)){var chosen=(_account.SelectedItem as PhoneAccount)?.Id;_accountRows=Phone.Accounts;_account.ItemsSource=Phone.Accounts;_account.SelectedItem=Phone.Accounts.FirstOrDefault(x=>x.Id==chosen)??Phone.Accounts.FirstOrDefault(x=>x.Default)??(Phone.Accounts.Count==1?Phone.Accounts[0]:null);}_account.IsVisible=Phone.Accounts.Count>1;_account.IsEnabled=_model.Session.IsConnected&&!_model.Privacy;_end.Content=call?.State=="ringing"?"Decline":"End call";_loading=false;}
         if(_mode=="notifications"&&!ReferenceEquals(_notificationRows,Phone.Notifications)){_notificationRows=Phone.Notifications;SetRows(_list,Phone.Notifications.Select(x=>new Row(x.Key,x.App+(x.Sender.Length>0?" · "+x.Sender:""),x.Redacted?"Content hidden by phone":x.Text??"",x)));}
         if(_mode=="tools"){if(!ReferenceEquals(_appRows,Phone.Apps)){_appRows=Phone.Apps;SetRows(_apps,Phone.Apps.Select(x=>new Row(x.Component,x.Name,"Installed on your phone",x)));}if(Phone.Tools!=null){_loading=true;_flash.IsChecked=(bool?)Phone.Tools["flashlight"]==true;_volume.Maximum=(int?)Phone.Tools["maximumVolume"]??15;if(!_volumePending&&!_volume.IsPointerOver)_volume.Value=(int?)Phone.Tools["volume"]??0;_loading=false;}}
     }

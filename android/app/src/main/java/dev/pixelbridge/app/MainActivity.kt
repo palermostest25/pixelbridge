@@ -70,7 +70,7 @@ class MainActivity : Activity() {
         root.addView(CheckBox(this).apply {
             text = "Send notification titles/text to PC (off = app name only)"
             isChecked = prefs.getBoolean("notif_content", false)
-            setOnCheckedChangeListener { _, c -> prefs.edit().putBoolean("notif_content", c).apply() }
+            setOnCheckedChangeListener { _, c -> prefs.edit().putBoolean("notif_content", c).apply(); BridgeService.start(this@MainActivity) }
         })
         button("Stop bridge") {
             startService(Intent(this, BridgeService::class.java).setAction(BridgeService.ACTION_STOP))

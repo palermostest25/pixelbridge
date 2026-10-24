@@ -32,6 +32,7 @@ public sealed class BridgeSettings
     public string? AdbPath { get; set; }
     public string? ScrcpyPath { get; set; }
     public bool AutoConnect { get; set; } = true;
+    public bool UseComputerCallAudio { get; set; } = true;
     public bool ShowOnConnect { get; set; } = true;
     public bool AutoUpdateCompanion { get; set; } = true;
     public int SensorRateHz { get; set; } = 50;
@@ -88,7 +89,7 @@ public sealed class BridgeSettings
 public sealed class DeviceSession : IAsyncDisposable
 {
     public const string Package = "dev.pixelbridge.app";
-    public const string ExpectedAppVersion = "0.4.0";
+    public const string ExpectedAppVersion = "0.4.1";
     private static readonly (string name, int port)[] Channels = [("control", 27183), ("video", 27184), ("audio", 27185), ("telemetry", 27186)];
 
     private readonly BridgeSettings _settings;
