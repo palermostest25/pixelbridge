@@ -35,6 +35,7 @@ public final class ShellCallAudio {
     private boolean ownsAudioMode;
     private volatile long lastMicrophoneFrame = SystemClock.elapsedRealtime();
     private volatile int microphoneRms, microphoneSamples;
+    private final CallAudioQueue microphone = new CallAudioQueue();
 
     public static void main(String[] args) {
         ShellCallAudio bridge = new ShellCallAudio();
@@ -63,8 +64,12 @@ public final class ShellCallAudio {
             AudioFormat output = new AudioFormat.Builder().setSampleRate(RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build();
             bridge.downlink = (AudioRecord) AudioManager.class.getMethod("getCallDownlinkExtractionAudioRecord", AudioFormat.class).invoke(audio, input);
             bridge.uplink = (AudioTrack) AudioManager.class.getMethod("getCallUplinkInjectionAudioTrack", AudioFormat.class).invoke(audio, output);
+            // The factory's capacity is not an appropriate live-call latency target.
+            bridge.uplink.setBufferSizeInFrames(RATE / 25); // Request 40 ms; the HAL enforces its minimum.
+            bridge.uplink.setStartThresholdInFrames(Math.min(RATE / 50, bridge.uplink.getBufferSizeInFrames()));
             bridge.downlink.startRecording(); bridge.uplink.play();
-            new Thread(bridge::receiveMicrophone, "pb-call-uplink").start();
+            new Thread(bridge::receiveMicrophone, "pb-call-usb-input").start();
+            new Thread(bridge::playMicrophone, "pb-call-uplink").start();
             new Thread(bridge::sendConversation, "pb-call-downlink").start();
             Handler handler = new Handler(Looper.getMainLooper());
             handler.postDelayed(new Runnable() {
@@ -113,13 +118,12 @@ public final class ShellCallAudio {
     private void receiveMicrophone() {
         try {
             DataInputStream input = new DataInputStream(new BufferedInputStream(System.in));
-            byte[] silence = new byte[MAX_FRAME];
             while (running.get()) {
                 int type = input.readUnsignedByte(), length = input.readInt();
                 if (length < 0 || length > MAX_FRAME) throw new IOException("Invalid call audio frame");
                 byte[] data = new byte[length]; input.readFully(data);
                 if (type == 2 && length == 1) { muted = data[0] != 0; continue; }
-                if (type != 1 || (length & 1) != 0) throw new IOException("Invalid microphone audio frame");
+                if (type != 1 || length == 0 || (length & 1) != 0) throw new IOException("Invalid microphone audio frame");
                 lastMicrophoneFrame = SystemClock.elapsedRealtime();
                 long energy = 0;
                 for (int index = 0; index + 1 < data.length; index += 2) {
@@ -127,6 +131,20 @@ public final class ShellCallAudio {
                     energy += (long) sample * sample;
                 }
                 microphoneRms = Math.max(microphoneRms, (int) Math.sqrt((double) energy / Math.max(data.length / 2, 1)));
+                microphone.offer(data, System.nanoTime());
+            }
+        } catch (EOFException ignored) { }
+        catch (Throwable e) { if (running.get()) fail("USB microphone connection stopped: " + e.getClass().getSimpleName()); }
+        finally { close(); }
+    }
+
+    private void playMicrophone() {
+        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO);
+        byte[] silence = new byte[MAX_FRAME];
+        try {
+            while (running.get()) {
+                byte[] data = microphone.take();
+                int length = data.length;
                 int offset = 0;
                 while (offset < length && running.get()) {
                     int count = uplink.write(muted ? silence : data, offset, length - offset, AudioTrack.WRITE_BLOCKING);
@@ -135,8 +153,7 @@ public final class ShellCallAudio {
                     microphoneSamples += count / 2;
                 }
             }
-        } catch (EOFException ignored) { }
-        catch (Throwable e) { if (running.get()) fail("USB microphone route stopped: " + e.getClass().getSimpleName()); }
+        } catch (Throwable e) { if (running.get()) fail("USB microphone route stopped: " + e.getClass().getSimpleName()); }
         finally { close(); }
     }
 

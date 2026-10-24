@@ -127,11 +127,10 @@ public sealed class UsbCallAudio : IDisposable
             var start = new ProcessStartInfo(adb.AdbPath) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
             foreach (var arg in new[] { "-s", session.Serial, "shell", "-T", $"CLASSPATH='{path}' app_process / dev.pixelbridge.app.phone.ShellCallAudio" }) start.ArgumentList.Add(arg);
             Process process;
-            ICallAudioDevice device;
+            ICallAudioDevice? device = null;
             lock (_resources) {
                 ct.ThrowIfCancellationRequested();
                 process = new Process { StartInfo = start }; _process = process; process.Start();
-                device = createDevice(); _device = device; device.Microphone += OnMicrophone; device.Start();
             }
             // Discard diagnostic output, keeping buffers bounded and call audio out of logs.
             var diagnostics = Task.Run(async () => { var buffer = new char[1024]; while (await process.StandardError.ReadAsync(buffer, ct) > 0) { } }, ct);
@@ -149,8 +148,16 @@ public sealed class UsbCallAudio : IDisposable
                 while (!ct.IsCancellationRequested) {
                     var pcm = await CallAudioProtocol.ReadPcmAsync(process.StandardOutput.BaseStream, ct);
                     if (writer.IsFaulted) throw writer.Exception!.GetBaseException();
-                    if (first) { first = false; ready(); }
-                    device.Play(listeningMuted() ? new byte[pcm.Length] : pcm);
+                    if (first) {
+                        // The first downlink frame proves the phone route is ready. Capturing
+                        // before this point leaves startup audio queued in the USB pipe.
+                        lock (_resources) {
+                            ct.ThrowIfCancellationRequested();
+                            device = createDevice(); _device = device; device.Microphone += OnMicrophone; device.Start();
+                        }
+                        first = false; ready();
+                    }
+                    device!.Play(listeningMuted() ? new byte[pcm.Length] : pcm);
                 }
             } finally { _stop.Cancel(); _microphone.Writer.TryComplete(); try { await writer; } catch { } try { await diagnostics; } catch { } }
         }

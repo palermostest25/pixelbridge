@@ -11,6 +11,7 @@ import PixelBridgeKit
     @Published private(set) var microphoneLevel: Double = -80
     @Published private(set) var microphoneAtPhone: Double = -80
     @Published private(set) var microphonePeak: Double = -80
+    @Published private(set) var microphoneBufferMs: Double = 0
     @Published private(set) var microphoneDiagnostics = ""
     private var io: CallAudioIO?
     private var callID: String?
@@ -39,7 +40,7 @@ import PixelBridgeKit
     func retry(session: DeviceSession) { callID = nil; attemptedID = nil; update(latestCalls, muted: muted, session: session) }
     func toggleListeningMute() { listeningMuted.toggle(); io?.setListeningMuted(listeningMuted) }
     private func start(_ id: String, session: DeviceSession) {
-        generation += 1; let token = generation; microphonePeak = -80; microphoneDiagnostics = ""
+        generation += 1; let token = generation; microphonePeak = -80; microphoneBufferMs = 0; microphoneDiagnostics = ""
         status = "Allow microphone access to use Mac call audio…"
         Task {
             guard await AVCaptureDevice.requestAccess(for: .audio) else { if token == generation { status = "Allow PixelBridge microphone access in macOS Privacy & Security, then retry Mac audio." }; return }
@@ -54,8 +55,8 @@ import PixelBridgeKit
                     Task { @MainActor in guard let self, token == self.generation else { return }; self.active = true; self.status = "Call audio is using this Mac over USB." }
                 }, onError: { [weak self] message in
                     Task { @MainActor in guard let self, token == self.generation else { return }; self.stop(); self.status = message }
-                }, onMicrophone: { [weak self] level in
-                    Task { @MainActor in guard let self, token == self.generation else { return }; self.microphoneLevel = level; self.microphonePeak = max(self.microphonePeak, level) }
+                }, onMicrophone: { [weak self] level, duration in
+                    Task { @MainActor in guard let self, token == self.generation else { return }; self.microphoneLevel = level; self.microphonePeak = max(self.microphonePeak, level); self.microphoneBufferMs = max(self.microphoneBufferMs, duration) }
                 }, onStats: { [weak self] values in
                     Task { @MainActor in
                         guard let self, token == self.generation else { return }
@@ -79,12 +80,12 @@ private final class CallAudioIO {
     private let outputQueue = DispatchQueue(label: "pb.call.speaker", qos: .userInitiated)
     private let microphoneSlots = DispatchSemaphore(value: 3), playbackSlots = DispatchSemaphore(value: 4)
     private let lock = NSLock()
-    private var closed = false, microphoneMuted = false, tapInstalled = false
+    private var closed = false, microphoneMuted = false, tapInstalled = false, microphoneReady = false
     private let onReady: () -> Void, onError: (String) -> Void
-    private let onMicrophone: (Double) -> Void, onStats: ([Int]) -> Void
+    private let onMicrophone: (Double, Double) -> Void, onStats: ([Int]) -> Void
     private var lastMicrophoneReport: TimeInterval = 0
     private let format = AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)!
-    init(adb: String, serial: String, apkPath: String, onReady: @escaping () -> Void, onError: @escaping (String) -> Void, onMicrophone: @escaping (Double) -> Void, onStats: @escaping ([Int]) -> Void) throws {
+    init(adb: String, serial: String, apkPath: String, onReady: @escaping () -> Void, onError: @escaping (String) -> Void, onMicrophone: @escaping (Double, Double) -> Void, onStats: @escaping ([Int]) -> Void) throws {
         self.onReady = onReady; self.onError = onError
         self.onMicrophone = onMicrophone; self.onStats = onStats
         process.executableURL = URL(fileURLWithPath: adb)
@@ -102,7 +103,8 @@ private final class CallAudioIO {
         var resampler = CallPCMResampler(inputRate: source.sampleRate)
         engine.attach(player); engine.connect(player, to: engine.mainMixerNode, format: format)
         node.installTap(onBus: 0, bufferSize: 960, format: source) { [weak self] buffer, _ in
-            guard let self, !isClosed, microphoneSlots.wait(timeout: .now()) == .success else { return }
+            // Never fill the USB pipe with speech while Android is still opening its audio route.
+            guard let self, self.lock.withLock({ !self.closed && self.microphoneReady }), microphoneSlots.wait(timeout: .now()) == .success else { return }
             guard let channels = buffer.floatChannelData else { microphoneSlots.signal(); return }
             let count = Int(buffer.frameLength), channelCount = Int(buffer.format.channelCount)
             var mono = [Float](repeating: 0, count: count)
@@ -115,11 +117,11 @@ private final class CallAudioIO {
                 lastMicrophoneReport = now
                 var energy: Double = 0
                 for sample in pcm { let value = Double(sample); energy += value * value }
-                onMicrophone(20 * log10(max(sqrt(energy / Double(pcm.count)), 1) / 32768))
+                onMicrophone(20 * log10(max(sqrt(energy / Double(pcm.count)), 1) / 32768), Double(count) / source.sampleRate * 1000)
             }
             inputQueue.async { [weak self] in
                 guard let self else { return }; defer { microphoneSlots.signal() }
-                guard !isClosed else { return }
+                guard !isClosed, ProcessInfo.processInfo.systemUptime - now < 0.2 else { return }
                 let pcm = lock.withLock { self.microphoneMuted ? Data(count: data.count) : data }
                 do { try writePCM(pcm) } catch { if !isClosed { onError("USB microphone connection stopped. Retry Mac audio.") } }
             }
@@ -162,7 +164,7 @@ private final class CallAudioIO {
                 }
                 if frame[0] == 3 { throw CallAudioFailure(String(data: data, encoding: .utf8) ?? "This phone’s USB call audio is unavailable") }
                 guard frame[0] == 1, size > 0, size % 2 == 0 else { throw CallAudioFailure("Invalid USB speaker audio") }
-                if !ready { ready = true; onReady() }
+                if !ready { ready = true; lock.withLock { microphoneReady = true }; onReady() }
                 guard playbackSlots.wait(timeout: .now()) == .success else { continue }
                 guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(size / 2)), let samples = buffer.floatChannelData?.pointee else { playbackSlots.signal(); continue }
                 buffer.frameLength = AVAudioFrameCount(size / 2)

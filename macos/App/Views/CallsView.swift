@@ -190,7 +190,7 @@ struct USBCallAudioControls: View {
             }
             if !audio.microphoneDiagnostics.isEmpty {
                 DisclosureGroup("Audio diagnostics") {
-                    Text("Mac microphone peak: \(Int(audio.microphonePeak)) dB. \(audio.microphoneDiagnostics)").font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
+                    Text("Mac microphone peak: \(Int(audio.microphonePeak)) dB; input buffer: \(Int(audio.microphoneBufferMs)) ms. \(audio.microphoneDiagnostics)").font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
                 }
             }
         }.disabled(model.privacy)
