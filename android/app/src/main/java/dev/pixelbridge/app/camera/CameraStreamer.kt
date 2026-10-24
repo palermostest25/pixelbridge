@@ -139,6 +139,7 @@ class CameraStreamer(
         val map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!
         val size = chooseSize(map.getOutputSizes(MediaCodec::class.java), reqW, reqH)
         val fpsRange = chooseFps(ch.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES), fps)
+        val outputFps = fps.coerceIn(5, 60).coerceAtMost(fpsRange.upper)
 
         val ht = HandlerThread("pb-camera").also { it.start() }
         thread = ht
@@ -149,7 +150,9 @@ class CameraStreamer(
         val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, size.width, size.height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
             setInteger(MediaFormat.KEY_BIT_RATE, bitrate.coerceIn(500_000, 12_000_000))
-            setInteger(MediaFormat.KEY_FRAME_RATE, fpsRange.upper)
+            setInteger(MediaFormat.KEY_FRAME_RATE, outputFps)
+            // Some lenses only advertise 30 fps AE ranges. Drop excess surface input before encoding.
+            setFloat(MediaFormat.KEY_MAX_FPS_TO_ENCODER, outputFps.toFloat())
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
             setInteger(MediaFormat.KEY_PRIORITY, 0)
             setInteger(MediaFormat.KEY_LATENCY, 1)
@@ -177,7 +180,7 @@ class CameraStreamer(
 
         val facing = facingName(ch)
         val cfg = JSONObject().put("codec", "h264").put("width", size.width).put("height", size.height)
-            .put("fps", fpsRange.upper).put("bitrate", bitrate).put("cameraId", cameraId).put("facing", facing)
+            .put("fps", outputFps).put("captureFpsRange", "${fpsRange.lower}-${fpsRange.upper}").put("bitrate", bitrate).put("cameraId", cameraId).put("facing", facing)
             .put("sensorOrientation", ch.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0)
             .put("timestampSource", "boottime") // frame timestamps are normalised to elapsedRealtimeNanos
         configJson = cfg
