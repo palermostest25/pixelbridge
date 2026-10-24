@@ -160,7 +160,7 @@ public sealed class UsbCallAudio : IDisposable
             if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             _stop.Cancel(); _microphone.Writer.TryComplete();
             lock (_resources) {
-            if (_device != null) { _device.Microphone -= OnMicrophone; _device.Dispose(); }
+            if (_device != null) { _device.Microphone -= OnMicrophone; try { _device.Dispose(); } catch { } }
             try { _process?.StandardInput.Close(); if (_process is { HasExited: false }) _process.Kill(true); } catch { }
             _process?.Dispose();
             }

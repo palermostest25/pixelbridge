@@ -79,7 +79,7 @@ private final class CallAudioIO {
     private let outputQueue = DispatchQueue(label: "pb.call.speaker", qos: .userInitiated)
     private let microphoneSlots = DispatchSemaphore(value: 3), playbackSlots = DispatchSemaphore(value: 4)
     private let lock = NSLock()
-    private var closed = false, microphoneMuted = false
+    private var closed = false, microphoneMuted = false, tapInstalled = false
     private let onReady: () -> Void, onError: (String) -> Void
     private let onMicrophone: (Double) -> Void, onStats: ([Int]) -> Void
     private var lastMicrophoneReport: TimeInterval = 0
@@ -124,6 +124,7 @@ private final class CallAudioIO {
                 do { try writePCM(pcm) } catch { if !isClosed { onError("USB microphone connection stopped. Retry Mac audio.") } }
             }
         }
+        tapInstalled = true
         do { try process.run(); engine.prepare(); try engine.start(); player.play() }
         catch { close(); throw error }
         outputQueue.async { [weak self] in self?.receive() }
@@ -172,7 +173,8 @@ private final class CallAudioIO {
     }
     func close() {
         guard lock.withLock({ if closed { return false }; closed = true; return true }) else { return }
-        engine.inputNode.removeTap(onBus: 0); player.stop(); engine.stop()
+        if tapInstalled { engine.inputNode.removeTap(onBus: 0); tapInstalled = false }
+        player.stop(); engine.stop()
         try? input.fileHandleForWriting.close()
         if process.isRunning { process.terminate() }
         errors.fileHandleForReading.readabilityHandler = nil
