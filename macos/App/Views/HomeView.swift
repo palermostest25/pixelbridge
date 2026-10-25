@@ -47,6 +47,7 @@ struct HomeView: View {
                 }
             }
 
+            if session.state == .unauthorized { AdbKeyImportControl() }
             HStack {
                 Text("Your workspace").font(.title3.weight(.semibold))
                 Spacer()

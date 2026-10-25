@@ -24,15 +24,20 @@ apk_path="${PIXELBRIDGE_ANDROID_APK:-$PWD/../android/app/build/outputs/apk/debug
 if [[ -f "$apk_path" ]]; then cp "$apk_path" "$app_dir/Contents/Resources/PixelBridge.apk"; fi
 printf 'APPL????' > "$app_dir/Contents/PkgInfo"
 signing_identity="${PIXELBRIDGE_SIGN_IDENTITY:--}"
-# A sole existing Apple identity keeps local updates trusted by Keychain. CI remains ad-hoc.
-if [[ "${1:-}" == "--install" && -z "${PIXELBRIDGE_SIGN_IDENTITY:-}" ]]; then
-  identities=$(security find-identity -v -p codesigning | sed -n 's/.*) \([0-9A-F]\{40\}\) ".*/\1/p')
-  if [[ $(printf '%s\n' "$identities" | sed '/^$/d' | wc -l | tr -d ' ') == 1 ]]; then signing_identity="$identities"; fi
-fi
+# Local builds use an ad-hoc signature unless an identity is explicitly supplied.
+# A keychain listing can include revoked Apple certificates; never select one implicitly.
 codesign --force --sign "$signing_identity" "$app_dir"
 codesign --verify --deep --strict "$app_dir"
 printf 'Built %s\n' "$app_dir"
 if [[ "${1:-}" == "--install" ]]; then
-  ditto "$app_dir" /Applications/PixelBridge.app
+  stage=$(mktemp -d /Applications/.pixelbridge-install.XXXXXX)
+  trap 'rm -rf "$stage"' EXIT
+  ditto "$app_dir" "$stage/PixelBridge.app"
+  codesign --verify --deep --strict "$stage/PixelBridge.app"
+  if [[ -e /Applications/PixelBridge.app ]]; then mv /Applications/PixelBridge.app "$stage/previous.app"; fi
+  if ! mv "$stage/PixelBridge.app" /Applications/PixelBridge.app; then
+    if [[ -e "$stage/previous.app" ]]; then mv "$stage/previous.app" /Applications/PixelBridge.app; fi
+    exit 1
+  fi
   printf 'Installed /Applications/PixelBridge.app\n'
 fi

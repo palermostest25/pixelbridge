@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>pixelbridge</AssemblyName>
     <RootNamespace>PixelBridge.Linux</RootNamespace>
-    <Version>0.4.1</Version>
+    <Version>0.4.2</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AvaloniaUseCompiledBindingsByDefault>false</AvaloniaUseCompiledBindingsByDefault>
     <InvariantGlobalization>true</InvariantGlobalization>

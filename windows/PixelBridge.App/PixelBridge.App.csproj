@@ -11,7 +11,7 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
     <AssemblyName>PixelBridge</AssemblyName>
-    <Version>0.4.1</Version>
+    <Version>0.4.2</Version>
     <ApplicationIcon>pixelbridge.ico</ApplicationIcon>
     <NoWarn>$(NoWarn);WPF0001</NoWarn>
   </PropertyGroup>

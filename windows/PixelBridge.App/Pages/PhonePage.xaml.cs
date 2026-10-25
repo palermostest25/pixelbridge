@@ -44,6 +44,27 @@ public partial class PhonePage : UserControl, IPage
         MainWindow.Current?.ShowToast(r is { Ok: true } ? "Phone app installed." : $"Install failed: {r?.StdErr}{r?.StdOut}");
     }
 
+    private async void ImportKeys_Click(object sender, RoutedEventArgs e)
+    {
+        var owner = Window.GetWindow(this);
+        var picker = new OpenFileDialog { Title = "Choose adbkey (adbkey.pub must be beside it)", Filter = "ADB keys|adbkey;adbkey.pub|All files|*.*" };
+        if (picker.ShowDialog(owner) != true) return;
+        try {
+            var plan = PixelBridge.Core.Adb.AdbKeyImport.Prepare(picker.FileName);
+            if (_c.Session.Adb is not { } adb) throw new IOException("Install or locate ADB first.");
+            if (MessageBox.Show(owner!, "Import this key pair?\nFingerprint: " + plan.Fingerprint + "\n\nCurrent ADB keys will be backed up. Restarting ADB briefly disconnects all ADB apps, including screen mirroring. The phone must already trust the imported keys, or you must approve its USB-debugging prompt.", "Import & reconnect", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
+            var auto = _c.Settings.AutoConnect;
+            await _c.Session.DisconnectAsync();
+            try {
+                plan.Install();
+                var stopped = await adb.RunAsync("kill-server");
+                if (!stopped.Ok) throw new IOException("Keys were saved, but ADB could not restart. Restart ADB manually.");
+                var started = await adb.RunAsync("start-server");
+                MainWindow.Current?.ShowToast(started.Ok ? "ADB keys imported. Previous keys are backed up in .android/pixelbridge-key-backups." : "Keys imported. Restart ADB manually to reconnect.");
+            } finally { _c.Settings.AutoConnect = auto; if (auto) _c.Session.RetryNow(); }
+        } catch (Exception error) { MainWindow.Current?.ShowToast(error.Message); }
+    }
+
     private void Unpair_Click(object sender, RoutedEventArgs e)
     {
         if (MessageBox.Show(Window.GetWindow(this)!, "Remove this PC's pairing key? You'll need to pair again to reconnect.", "Unpair",
