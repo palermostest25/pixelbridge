@@ -223,8 +223,35 @@
                         <Border Classes="card">
                             <DockPanel>
                                 <Button DockPanel.Dock="Right" Classes="accent" Content="Show phone screen" Click="Scrcpy_Click"/>
-                                <TextBlock Classes="secondary" VerticalAlignment="Center" Text="Uses scrcpy over the same USB cable. Use it to answer Android permission prompts."/>
+                                <TextBlock Classes="secondary" VerticalAlignment="Center" Text="Uses your current USB or Wi-Fi connection. Use it to answer Android permission prompts."/>
                             </DockPanel>
+                        </Border>
+                        <Border Classes="card">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Connect over Wi-Fi" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="WirelessDetail" Classes="secondary" TextWrapping="Wrap"/>
+                                <WrapPanel>
+                                    <Button x:Name="WirelessSetup" Content="Set up over USB…" Click="Wireless_Click" Margin="0,0,10,0"/>
+                                    <Button x:Name="WirelessOff" Content="Turn off wireless" Click="WirelessOff_Click"/>
+                                </WrapPanel>
+                                <Expander Header="Pair without a cable" HorizontalAlignment="Stretch">
+                                    <StackPanel Spacing="10" Margin="0,12,0,0">
+                                        <TextBlock Classes="secondary" TextWrapping="Wrap" Text="On Android 11+, open Settings → System → Developer options → Wireless debugging → Pair device with pairing code. Keep that dialog open."/>
+                                        <TextBlock Text="Pairing address (IP:port)"/>
+                                        <TextBox x:Name="WirelessAddress" PlaceholderText="192.168.1.20:37123"/>
+                                        <TextBlock Text="Six-digit pairing code"/>
+                                        <TextBox x:Name="WirelessCode" PasswordChar="●"/>
+                                        <TextBlock Text="Connection address (optional if discovered automatically)"/>
+                                        <TextBox x:Name="WirelessConnectAddress"/>
+                                        <TextBlock Classes="secondary" TextWrapping="Wrap" Text="The connection port is on the main Wireless debugging page and differs from the pairing port. If discovery fails, enter it and choose Connect paired phone."/>
+                                        <WrapPanel>
+                                            <Button x:Name="WirelessPair" Content="Pair &amp; connect" Click="WirelessPair_Click" Margin="0,0,10,0"/>
+                                            <Button x:Name="WirelessConnect" Content="Connect paired phone" Click="WirelessConnect_Click"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </Expander>
+                                <TextBlock x:Name="WirelessMessage" Classes="secondary" TextWrapping="Wrap"/>
+                            </StackPanel>
                         </Border>
                         <Border Classes="card">
                             <StackPanel Spacing="10">

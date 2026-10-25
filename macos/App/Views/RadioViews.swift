@@ -172,6 +172,7 @@ struct PhoneView: View {
             SettingRow(icon: "shippingbox", title: "Install or update the phone app", subtitle: "Mac expects version \(DeviceSession.expectedAppVersion)") {
                 Button("Choose APK…") { importing = true }
             }
+            WirelessControl()
             AdbKeyImportControl()
             SettingRow(icon: "key", title: "Pairing", subtitle: session.pairedAt.map { "Paired \($0.formatted())" } ?? "Not paired") {
                 HStack { Button("Pair") { Task { _ = await session.pair() } }; Button("Unpair") { session.unpair() } }
@@ -194,7 +195,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             TextField("Phone serial", text: $serial)
-            Toggle("Connect automatically when plugged in", isOn: $auto)
+            Toggle("Connect automatically over USB or Wi-Fi", isOn: $auto)
             Toggle("Bring PixelBridge forward when the phone is connected", isOn: $showOnConnect)
             Toggle("Update the paired phone companion automatically", isOn: $updateCompanion)
             Text("Updates use the bundled APK and require its signing key to match the existing phone app.").font(.caption).foregroundStyle(.secondary)

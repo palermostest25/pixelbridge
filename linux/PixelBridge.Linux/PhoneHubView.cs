@@ -151,7 +151,7 @@ public sealed class PhoneHubView : UserControl
         foreach(var pair in _empty) pair.Value.IsVisible=pair.Key.ItemCount==0;
         foreach(var button in Avalonia.LogicalTree.LogicalExtensions.GetLogicalDescendants(this).OfType<Button>())if(Equals(button.Tag,"phoneAction"))button.IsEnabled=_model.Session.IsConnected&&!_model.Privacy;
         _flash.IsEnabled=_volume.IsEnabled=_model.Session.IsConnected&&!_model.Privacy;
-        if(_active&&_needsLoad&&_model.Session.IsConnected)_=LoadAsync();_notice.Text=!_model.Session.IsConnected?"Connect your phone over USB. Data loads when this view is open.":Phone.Error;
+        if(_active&&_needsLoad&&_model.Session.IsConnected)_=LoadAsync();_notice.Text=!_model.Session.IsConnected?"Connect your phone over USB or Wi-Fi. Data loads when this view is open.":Phone.Error;
         _send.IsEnabled=_model.Session.IsConnected&&!_model.Privacy&&!Phone.Sending&&!string.IsNullOrWhiteSpace(_number.Text)&&!string.IsNullOrWhiteSpace(_draft.Text);_receipt.Text=Phone.SendStatus;
         if(_mode=="messages"){if(!ReferenceEquals(_rows,Phone.Threads)){_rows=Phone.Threads;SetRows(_list,Phone.Threads.Select(x=>new Row(x.Id.ToString(),x.Address,(x.Unread?"Unread · ":"")+x.Preview,x)));}if(!ReferenceEquals(_messageRows,Phone.Messages)){_messageRows=Phone.Messages;SetRows(_messages,Phone.Messages.Select(x=>new Row(x.Id.ToString(),x.Body,(x.Incoming?"Received":"Sent")+" · "+DateTimeOffset.FromUnixTimeMilliseconds(x.DateMs).LocalDateTime.ToString("t"),x)));if(_messages.ItemCount>0)_messages.ScrollIntoView(_messages.ItemCount-1);}}
         if(_mode=="contacts"&&!ReferenceEquals(_rows,Phone.Contacts)){_rows=Phone.Contacts;SetRows(_list,Phone.Contacts.Select(x=>new Row(x.Id+":"+x.Number,x.Name,x.Number,x)));}

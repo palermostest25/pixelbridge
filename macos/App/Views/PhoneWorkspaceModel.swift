@@ -62,7 +62,7 @@ struct PhoneEntry: Identifiable {
     private func rows(_ value: [String: Any], _ key: String) -> [PhoneEntry] { (value[key] as? [[String: Any]] ?? []).map { PhoneEntry(values: $0) } }
     private func request(_ op: String, _ args: [String: Any] = [:]) async throws -> [String: Any] {
         guard enabled else { throw PhoneError("Turn off privacy mode to use phone features") }
-        guard session.isConnected else { throw PhoneError("Connect your phone over USB to use this feature.") }
+        guard session.isConnected else { throw PhoneError("Connect your phone over USB or Wi-Fi to use this feature.") }
         let generation = epoch
         let response = try await session.radio(op, args, timeout: 20)
         guard enabled, generation == epoch else { throw PhoneError("The phone connection changed; refresh this view") }

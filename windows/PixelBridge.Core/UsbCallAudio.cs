@@ -22,7 +22,7 @@ public static class CallAudioProtocol
     {
         var header = new byte[12]; await source.ReadExactlyAsync(header, ct);
         if (!header.AsSpan(0, 4).SequenceEqual("PBA1"u8) || BinaryPrimitives.ReadInt32BigEndian(header.AsSpan(4)) != 16000 || BinaryPrimitives.ReadInt32BigEndian(header.AsSpan(8)) != 1)
-            throw new IOException("Update the phone app to enable USB call audio");
+            throw new IOException("Update the phone app to enable computer call audio");
     }
     public static async Task<byte[]> ReadPcmAsync(Stream source, CancellationToken ct)
     {
@@ -81,14 +81,14 @@ public sealed class UsbCallAudio : IDisposable
             StopLocked(); _callId = id;
             if (id == null) return;
             var connection = new Connection(_createDevice, () => _microphoneMuted, () => _listeningMuted);
-            _connection = connection; Status = "Connecting USB call audio…";
+            _connection = connection; Status = "Connecting computer call audio…";
             _ = RunAsync(connection);
         }
     }
     private async Task RunAsync(Connection connection)
     {
         try {
-            await connection.RunAsync(_session, () => { lock (_gate) { if (_connection == connection) { Active = true; Status = "Call audio is using this computer over USB."; } } });
+            await connection.RunAsync(_session, () => { lock (_gate) { if (_connection == connection) { Active = true; Status = $"Call audio is using this computer over {_session.TransportLabel}."; } } });
         } catch (OperationCanceledException) { }
         catch (Exception e) { lock (_gate) { if (_connection == connection) { Active = false; Status = "Computer call audio: " + e.Message; } } }
         finally { connection.Dispose(); lock (_gate) { if (_connection == connection) { _connection = null; Active = false; } } }

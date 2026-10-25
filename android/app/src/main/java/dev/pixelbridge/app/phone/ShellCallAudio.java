@@ -51,15 +51,15 @@ public final class ShellCallAudio {
                 System.out.println("{\"supported\":" + supported + "}"); System.exit(0);
             }
             bridge.out.writeInt(0x50424131); bridge.out.writeInt(RATE); bridge.out.writeInt(1); bridge.out.flush();
-            if (!supported) throw new UnsupportedOperationException("This phone does not support USB cellular call audio");
+            if (!supported) throw new UnsupportedOperationException("This phone does not support computer cellular call audio");
             long deadline = System.currentTimeMillis() + 8000;
             while (!inCall(audio) && System.currentTimeMillis() < deadline) Thread.sleep(100);
-            if (!inCall(audio)) throw new IllegalStateException("No connected call is available for USB audio");
+            if (!inCall(audio)) throw new IllegalStateException("No connected call is available for computer audio");
             Constructor<TelecomManager> telecomConstructor = TelecomManager.class.getDeclaredConstructor(Context.class);
             telecomConstructor.setAccessible(true);
             TelecomManager telecom = telecomConstructor.newInstance(context);
             audio.setMode(5); bridge.ownsAudioMode = true; // MODE_CALL_REDIRECT: replace the physical call microphone/speaker.
-            if (audio.getMode() != 5) throw new UnsupportedOperationException("The phone did not allow USB call-audio routing");
+            if (audio.getMode() != 5) throw new UnsupportedOperationException("The phone did not allow computer call-audio routing");
             AudioFormat input = new AudioFormat.Builder().setSampleRate(RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_IN_MONO).build();
             AudioFormat output = new AudioFormat.Builder().setSampleRate(RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build();
             bridge.downlink = (AudioRecord) AudioManager.class.getMethod("getCallDownlinkExtractionAudioRecord", AudioFormat.class).invoke(audio, input);
@@ -134,7 +134,7 @@ public final class ShellCallAudio {
                 microphone.offer(data, System.nanoTime());
             }
         } catch (EOFException ignored) { }
-        catch (Throwable e) { if (running.get()) fail("USB microphone connection stopped: " + e.getClass().getSimpleName()); }
+        catch (Throwable e) { if (running.get()) fail("Computer microphone connection stopped: " + e.getClass().getSimpleName()); }
         finally { close(); }
     }
 
@@ -153,7 +153,7 @@ public final class ShellCallAudio {
                     microphoneSamples += count / 2;
                 }
             }
-        } catch (Throwable e) { if (running.get()) fail("USB microphone route stopped: " + e.getClass().getSimpleName()); }
+        } catch (Throwable e) { if (running.get()) fail("Computer microphone route stopped: " + e.getClass().getSimpleName()); }
         finally { close(); }
     }
 
@@ -175,7 +175,7 @@ public final class ShellCallAudio {
                     out.flush();
                 }
             }
-        } catch (Throwable e) { if (running.get()) fail("USB speaker route stopped: " + e.getClass().getSimpleName()); }
+        } catch (Throwable e) { if (running.get()) fail("Computer speaker route stopped: " + e.getClass().getSimpleName()); }
         finally { close(); }
     }
 

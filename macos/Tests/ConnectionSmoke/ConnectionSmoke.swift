@@ -37,7 +37,7 @@ struct ConnectionSmoke {
             }
             require(session.state == expected, "session state for \(name): \(session.state), \(session.detail)")
             require(session.serial == serial, "resolved serial for \(name)")
-            if name == "none" { require(session.detail.contains("USB data cable"), "show a useful recovery instruction") }
+            if name == "none" { require(session.detail.contains("Connect USB"), "show a useful recovery instruction") }
             await session.shutdown()
         }
         let bootFixture = directory.appendingPathComponent("boot-fixture")
@@ -77,7 +77,30 @@ struct ConnectionSmoke {
         require(attached == 1, "bring dashboard forward once per physical attachment, not every boot retry")
         await recovery.shutdown()
         withExtendedLifetime((attachment, detail)) {}
-        print("PASS: 19 device-selection, discovery and boot recovery checks; no real phone commands sent.")
+        let wirelessFixture = directory.appendingPathComponent("wireless-fixture")
+        let wirelessScript = """
+        #!/bin/sh
+        if [ "$1" = devices ]; then echo '192.168.1.20:5555 device'; exit 0; fi
+        case "$*" in
+          *'getprop ro.serialno'*) echo another-phone ;;
+          *) exit 99 ;;
+        esac
+        """
+        try wirelessScript.write(to: wirelessFixture, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wirelessFixture.path)
+        var wirelessSettings = BridgeSettings(); wirelessSettings.adbPath = wirelessFixture.path
+        wirelessSettings.targetSerial = "phone"; wirelessSettings.wirelessSerial = "phone"; wirelessSettings.wirelessEndpoint = "192.168.1.20:5555"
+        let wireless = DeviceSession(settings: wirelessSettings)
+        wireless.start()
+        for _ in 0..<80 {
+            if wireless.state == .wrongDevice { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        require(wireless.state == .wrongDevice && wireless.detail.contains("does not identify your phone"), "reject reused wireless address before app launch or pairing")
+        await wireless.shutdown()
+        require(WirelessAdb.validEndpoint("10.0.0.2:37123"), "accept a private TLS endpoint")
+        require(!WirelessAdb.validEndpoint(":5555") && !WirelessAdb.validEndpoint("8.8.8.8:5555"), "reject invalid/public endpoints")
+        print("PASS: device-selection, discovery, boot recovery and wireless identity checks; no real phone commands sent.")
     }
 
     static func require(_ condition: @autoclosure () -> Bool, _ message: String) {

@@ -204,7 +204,7 @@ public sealed class PhoneHubPage : UserControl, IPage
         foreach(var button in Buttons(_root)) if(Equals(button.Tag,"phoneAction"))button.IsEnabled=_c.Session.IsConnected&&!_c.PrivacyMode;
         _flash.IsEnabled=_volume.IsEnabled=_c.Session.IsConnected&&!_c.PrivacyMode;
         if(_active&&_needsLoad&&_c.Session.IsConnected)_=LoadAsync();
-        _notice.Text=!_c.Session.IsConnected?"Connect your phone over USB. Data loads when this view is open.":Phone.Error;
+        _notice.Text=!_c.Session.IsConnected?"Connect your phone over USB or Wi-Fi. Data loads when this view is open.":Phone.Error;
         _send.IsEnabled=_c.Session.IsConnected&&!_c.PrivacyMode&&!Phone.Sending&&!string.IsNullOrWhiteSpace(_number.Text)&&!string.IsNullOrWhiteSpace(_draft.Text);_receipt.Text=Phone.SendStatus;
         if(_mode=="messages")
         {

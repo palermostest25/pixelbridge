@@ -45,14 +45,14 @@ import PixelBridgeKit
         Task {
             guard await AVCaptureDevice.requestAccess(for: .audio) else { if token == generation { status = "Allow PixelBridge microphone access in macOS Privacy & Security, then retry Mac audio." }; return }
             guard token == generation, allowed, enabled, callID == id, let adb = session.adb, !session.serial.isEmpty else { return }
-            status = "Connecting USB call audio…"
+            status = "Connecting Mac call audio…"
             let result = await adb.run(["-s", session.serial, "shell", "pm path dev.pixelbridge.app"], timeout: 8)
             guard token == generation, callID == id else { return }
             let path = result.stdout.split(separator: "\n").first(where: { $0.hasPrefix("package:") })?.dropFirst(8).trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard result.ok, path.range(of: "^/[A-Za-z0-9_/.=+~\\-]+$", options: .regularExpression) != nil else { status = "Could not locate the phone’s call-audio helper. Update the phone app, then retry."; return }
             do {
                 let bridge = try CallAudioIO(adb: adb.path, serial: session.serial, apkPath: path, onReady: { [weak self] in
-                    Task { @MainActor in guard let self, token == self.generation else { return }; self.active = true; self.status = "Call audio is using this Mac over USB." }
+                    Task { @MainActor in guard let self, token == self.generation else { return }; self.active = true; self.status = "Call audio is using this Mac over \(session.transportLabel)." }
                 }, onError: { [weak self] message in
                     Task { @MainActor in guard let self, token == self.generation else { return }; self.stop(); self.status = message }
                 }, onMicrophone: { [weak self] level, duration in
@@ -123,7 +123,7 @@ private final class CallAudioIO {
                 guard let self else { return }; defer { microphoneSlots.signal() }
                 guard !isClosed, ProcessInfo.processInfo.systemUptime - now < 0.2 else { return }
                 let pcm = lock.withLock { self.microphoneMuted ? Data(count: data.count) : data }
-                do { try writePCM(pcm) } catch { if !isClosed { onError("USB microphone connection stopped. Retry Mac audio.") } }
+                do { try writePCM(pcm) } catch { if !isClosed { onError("Microphone connection stopped. Retry Mac audio.") } }
             }
         }
         tapInstalled = true
@@ -143,7 +143,7 @@ private final class CallAudioIO {
     private func read(_ count: Int) throws -> Data {
         var result = Data()
         while result.count < count {
-            guard let part = try output.fileHandleForReading.read(upToCount: count - result.count), !part.isEmpty else { throw CallAudioFailure("USB call audio ended") }
+            guard let part = try output.fileHandleForReading.read(upToCount: count - result.count), !part.isEmpty else { throw CallAudioFailure("Computer call audio ended") }
             result.append(part)
         }
         return result
@@ -152,7 +152,7 @@ private final class CallAudioIO {
     private func receive() {
         do {
             let header = try read(12)
-            guard header.prefix(4) == Data("PBA1".utf8), int32(header.subdata(in: 4..<8)) == 16000, int32(header.subdata(in: 8..<12)) == 1 else { throw CallAudioFailure("Update the phone app to enable USB call audio") }
+            guard header.prefix(4) == Data("PBA1".utf8), int32(header.subdata(in: 4..<8)) == 16000, int32(header.subdata(in: 8..<12)) == 1 else { throw CallAudioFailure("Update the phone app to enable Computer call audio") }
             var ready = false
             while !isClosed {
                 let frame = try read(5), size = Int(int32(frame.subdata(in: 1..<5)))
@@ -162,7 +162,7 @@ private final class CallAudioIO {
                     onStats(stride(from: 0, to: 24, by: 4).map { Int(int32(data.subdata(in: $0..<($0 + 4)))) })
                     continue
                 }
-                if frame[0] == 3 { throw CallAudioFailure(String(data: data, encoding: .utf8) ?? "This phone’s USB call audio is unavailable") }
+                if frame[0] == 3 { throw CallAudioFailure(String(data: data, encoding: .utf8) ?? "This phone’s Computer call audio is unavailable") }
                 guard frame[0] == 1, size > 0, size % 2 == 0 else { throw CallAudioFailure("Invalid USB speaker audio") }
                 if !ready { ready = true; lock.withLock { microphoneReady = true }; onReady() }
                 guard playbackSlots.wait(timeout: .now()) == .success else { continue }

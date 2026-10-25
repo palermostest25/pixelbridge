@@ -15,7 +15,7 @@ struct HomeView: View {
                         .overlay(Image(systemName: session.isConnected ? "checkmark" : "cable.connector").foregroundStyle(session.isConnected ? .green : .secondary))
                     VStack(alignment: .leading, spacing: 6) {
                         Text(session.deviceProps["ro.product.model"] ?? "Your Pixel").font(.system(size: 28, weight: .semibold, design: .rounded))
-                        Text(session.isConnected ? "Connected over USB" : "\(session.state.label) · \(session.detail)").foregroundStyle(.secondary)
+                        Text(session.isConnected ? "Connected over \(session.transportLabel)" : "\(session.state.label) · \(session.detail)").foregroundStyle(.secondary)
                         HStack {
                             if let r = session.deviceProps["ro.build.version.release"] { Chip("Android \(r)") }
                             if let b = model.battery, session.isConnected { Chip("\(b.percent)% battery") }
@@ -86,7 +86,7 @@ struct HomeView: View {
                 Card {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Connection").font(.headline)
-                        Text(session.isConnected ? String(format: "USB · round trip %.1f ms", session.rttMs) : "No active link")
+                        Text(session.isConnected ? String(format: "%@ · round trip %.1f ms", session.transportLabel, session.rttMs) : "No active link")
                         ForEach(session.portMap.sorted(by: { $0.key < $1.key }), id: \.key) { k, v in
                             Text("\(k)  127.0.0.1:\(v)").font(.caption.monospaced()).foregroundStyle(.secondary)
                         }

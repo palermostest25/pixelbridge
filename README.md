@@ -1,6 +1,6 @@
 # PixelBridge
 
-Bring your Android phone to your desktop: messages, calls, contacts and notifications alongside a USB webcam, microphone, compass, motion sensors, GPS, Bluetooth LE and internet sharing. No root. Built with a screenless Pixel 7 in mind; initial USB debugging authorization and Android permissions are still required.
+Bring your Android phone to your desktop: messages, calls, contacts and notifications alongside a webcam, microphone, compass, motion sensors, GPS, Bluetooth LE and internet sharing. No root. Built with a screenless Pixel 7 in mind; initial Android debugging authorization and app permissions are still required.
 
 | | Windows 11 | Linux | macOS 14+ |
 |---|---|---|---|
@@ -9,7 +9,8 @@ Bring your Android phone to your desktop: messages, calls, contacts and notifica
 | Microphone output | VB-CABLE | PipeWire/PulseAudio virtual source | BlackHole |
 | Camera controls | Lens, zoom, OIS/EIS, rotation, mirror | Same | Same |
 | Messages, contacts, calls, notification replies, compass and phone tools | Yes | Yes | Yes |
-| USB call microphone/speakers (supported Android phones) | Yes | Yes | Yes |
+| Computer call microphone/speakers (supported Android phones) | Yes | Yes | Yes |
+| USB + Wi-Fi connection / wireless pairing | Yes | Yes | Yes |
 | Internet control | System tray | System tray | Menu bar |
 
 ## Install
@@ -30,19 +31,32 @@ On the phone, enable USB debugging and authorize this computer. Install `PixelBr
 
 **Calls** has its own dialer, numeric keypad and recent-call history inside PixelBridge. Choose a SIM/phone line when your phone has more than one. To answer, decline, end, hold, mute, change audio output or send keypad tones, choose PixelBridge as the Pixel’s default Phone app using **Set up on Pixel** (or **Enable incoming-call controls**). Mute and phone audio output reflect Android’s confirmed state. Merge/swap controls appear when supported by the phone and carrier. The phone also includes a local dialer for when USB is disconnected. No call or message is sent merely by connecting.
 
-**Computer call audio** uses the computer’s microphone and speakers over the already-authorized USB debugging connection, independently of iPhone calling or Bluetooth pairing. Enable **Use Mac/computer microphone and speakers** in Calls. It requires Android 13+ and phone support for Android’s system call-audio redirection interface; unsupported phones show an error and retain their phone/headset route. The authorized ADB shell runs an ephemeral helper from the installed companion APK using its existing audio-interception permission. The ordinary phone app receives no privileged permission. macOS asks for microphone access and uses voice processing for echo cancellation. Windows uses the default communications speaker and default microphone; Linux uses PulseAudio/PipeWire compatibility tools. Headphones are useful on desktops without echo cancellation. Microphone mute and speaker mute are separate. Streams stop on call end, hold, privacy mode or disconnect, and no call audio is saved.
+**Computer call audio** uses the computer’s microphone and speakers over the already-authorized USB or Wi-Fi debugging connection, independently of iPhone calling or Bluetooth pairing. Enable **Use Mac/computer microphone and speakers** in Calls. It requires Android 13+ and phone support for Android’s system call-audio redirection interface; unsupported phones show an error and retain their phone/headset route. The authorized ADB shell runs an ephemeral helper from the installed companion APK using its existing audio-interception permission. The ordinary phone app receives no privileged permission. macOS asks for microphone access and uses voice processing for echo cancellation. Windows uses the default communications speaker and default microphone; Linux uses PulseAudio/PipeWire compatibility tools. Headphones are useful on desktops without echo cancellation. Microphone mute and speaker mute are separate. Streams stop on call end, hold, privacy mode or disconnect, and no call audio is saved.
 
 On macOS, click **PixelBridge’s menu-bar icon** for a compact dialer and call controls, or use **⌘⇧C** while PixelBridge is active. Incoming calls ring on the Mac and open this popover; answer, decline, silence the ring, mute or hang up there. Windows/Linux ring and bring their Calls page forward. Silencing a ring does not decline the call.
 
 **Contacts** offers name/number search, calling and SMS composition. **Compass** uses magnetic north with tilt compensation, sensor accuracy and field strength, and pauses when hidden. **Phone Tools** provides flashlight, media volume, a short find-phone ring, vibration, app launching, display wake/sleep, confirmed restart and file transfers to/from Downloads. Existing files are not intentionally overwritten. Private phone data is held in desktop memory and cleared on disconnect or privacy mode; Android stores bounded send receipts without message bodies to prevent duplicate submissions.
 
+## Connect wirelessly
+
+All three desktop apps have **Phone screen → Connect over Wi-Fi**. Use a current Android platform-tools installation and put the phone and computer on the same private Wi-Fi network. No Bluetooth pairing is required.
+
+- **Android 11+ (encrypted, no cable):** enable Developer options → Wireless debugging → Pair device with pairing code. In PixelBridge expand **Pair without a cable**, enter the displayed pairing address and six-digit code, then **Pair & connect**. PixelBridge discovers the connection port automatically. If discovery is blocked, enter the separate IP address and port from Android's main Wireless debugging page and choose **Connect paired phone**. Grant the companion's permissions and choose **Pair** in PixelBridge when prompted. The code is never saved. The Android app includes a shortcut to Developer options.
+- **Screenless phone / trusted USB:** connect the already-authorized phone by USB, then choose **Set up over USB…**. After accepting the network-debugging explanation, PixelBridge reads its Wi-Fi address, enables ADB on port 5555, verifies the phone, and reconnects over Wi-Fi. Unplug after the success message. This compatibility mode is **unencrypted** and exposes Android debugging to the local network; use only a trusted private network. **Turn off wireless** sends `adb usb` to stop this listener. If the phone is unreachable, reconnect USB to turn it off. A restart or changed IP can require USB setup again.
+
+The saved connection retries at most once every 30 seconds while disconnected, and never scans the LAN. Encrypted pairing can rediscover changed addresses/ports through Android's mDNS advertisement; the phone identity is checked again before accepting a new address. The existing PixelBridge pairing is retained across the transport change. Calls and computer audio, messages, camera, microphone, sensors, tools and scrcpy use the selected transport. Wi-Fi quality affects audio/video latency. **USB internet sharing still requires a cable.**
+
+**Disconnect Wi-Fi** removes PixelBridge's saved encrypted connection and disconnects its ADB transport. Android's Wireless debugging switch and trust list belong to Android; turn that switch off or forget this computer there to disable/revoke access. Other ADB tools can reconnect a still-authorized phone. For Android's connection and encryption details, see the [ADB guide](https://developer.android.com/tools/adb) and [ADB Wi-Fi architecture](https://android.googlesource.com/platform/packages/modules/adb/+/HEAD/docs/dev/adb_wifi.md).
+
+Wireless transport selection, address validation and wrong-phone rejection have automated coverage. Physical wireless calling/camera behavior still needs a real phone test; platform builds alone do not establish radio performance or battery life.
+
 ## Reconnect and background use
 
-Plugging in the selected phone brings the dashboard forward by default; disable this in Settings if preferred. PixelBridge waits through boot, opens the companion, recreates USB forwards and reconnects using the saved pairing. Android requires its first unlock after a restart before encrypted phone data is available. This cannot be skipped. On a screenless phone, open **Phone Screen** from an already authorized computer to enter that unlock yourself.
+Plugging in the selected phone brings the dashboard forward by default; disable this in Settings if preferred. PixelBridge waits through boot, opens the companion, recreates connection forwards and reconnects using the saved pairing. Android requires its first unlock after a restart before encrypted phone data is available. This cannot be skipped. On a screenless phone, open **Phone Screen** from an already authorized computer to enter that unlock yourself.
 
 **Import ADB keys** is available on the Phone Screen page on macOS, Windows and Linux, and in Mac Settings. Copy both `adbkey` and `adbkey.pub` from the other computer’s `.android` directory, keep them together, then select either file. PixelBridge checks the private/public match and shows a fingerprint before applying it. The existing keys are backed up in `.android/pixelbridge-key-backups` with private permissions. Applying the import restarts the shared ADB server and briefly interrupts other ADB apps; canceling leaves everything unchanged. This restores an identity the phone already trusts; it cannot bypass Android’s USB-debugging approval. Android app-signing keys such as `debug.keystore` are separate and are not accepted here.
 
-The phone’s **Available after restart** option resumes only the idle USB listener after first unlock. Camera, mic, location and motion capture remain off until requested. Desktop packages include a matching companion APK and can update it in place on the next connection; signature mismatches stop with an explanation and never uninstall the phone app. Updates for an existing installation must use its original signing key.
+The phone’s **Available after restart** option resumes only the idle loopback listener after first unlock. Camera, mic, location and motion capture remain off until requested. Desktop packages include a matching companion APK and can update it in place on the next connection; signature mismatches stop with an explanation and never uninstall the phone app. Updates for an existing installation must use its original signing key.
 
 On macOS, closing the dashboard removes the Dock icon and keeps the menu-bar call popover, ringing and bridge alive. Choose **Open PixelBridge** to restore the window. **Quit PixelBridge** exits completely. Windows and Linux keep their system-tray controls when the window closes.
 

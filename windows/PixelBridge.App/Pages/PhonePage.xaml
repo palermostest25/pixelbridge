@@ -10,7 +10,7 @@
                 <TextBlock Text="&#xE7F4;" Style="{StaticResource Glyph}" FontSize="28" Margin="0,0,18,0"/>
                 <StackPanel>
                     <TextBlock Text="Control the phone from this PC" Style="{StaticResource SubtitleTextBlockStyle}" FontSize="18"/>
-                    <TextBlock Text="The Pixel's display doesn't work, so use this window to answer Android permission prompts and change phone settings. Uses scrcpy over the same USB cable." Style="{StaticResource Secondary}" Margin="0,4,12,0"/>
+                    <TextBlock Text="The Pixel's display doesn't work, so use this window to answer Android permission prompts and change phone settings. Uses your current USB or Wi-Fi connection." Style="{StaticResource Secondary}" Margin="0,4,12,0"/>
                 </StackPanel>
             </DockPanel>
         </Border>
@@ -21,6 +21,29 @@
             <Button Content="Bring to front" Click="Launch_Click"/>
         </c:SettingCard>
 
+        <c:SettingCard x:Name="WirelessCard" Header="Connect over Wi-Fi" Description="Set up once over USB, then unplug. Keep both devices on the same private Wi-Fi network." Glyph="&#xE701;">
+            <StackPanel>
+                <Button x:Name="WirelessSetup" Content="Set up over USB…" Click="Wireless_Click"/>
+                <Button x:Name="WirelessOff" Content="Turn off wireless" Click="WirelessOff_Click" Margin="0,6,0,0"/>
+            </StackPanel>
+        </c:SettingCard>
+        <Expander Header="Pair without a cable" Margin="0,8,0,12">
+            <StackPanel Margin="16,12">
+                <TextBlock Style="{StaticResource Secondary}" Text="On Android 11+, open Settings → System → Developer options → Wireless debugging → Pair device with pairing code. Keep that dialog open."/>
+                <TextBlock Text="Pairing address (IP:port)" Margin="0,12,0,4"/>
+                <TextBox x:Name="WirelessAddress"/>
+                <TextBlock Text="Six-digit pairing code" Margin="0,12,0,4"/>
+                <PasswordBox x:Name="WirelessCode"/>
+                <TextBlock Text="Connection address (optional if discovered automatically)" Margin="0,12,0,4"/>
+                <TextBox x:Name="WirelessConnectAddress"/>
+                <TextBlock Style="{StaticResource Secondary}" Margin="0,8,0,12" Text="The connection port is on the main Wireless debugging page and differs from the pairing port. If discovery fails, enter it and choose Connect paired phone."/>
+                <WrapPanel>
+                    <Button x:Name="WirelessPair" Content="Pair &amp; connect" Click="WirelessPair_Click" Margin="0,0,10,0"/>
+                    <Button x:Name="WirelessConnect" Content="Connect paired phone" Click="WirelessConnect_Click"/>
+                </WrapPanel>
+            </StackPanel>
+        </Expander>
+        <TextBlock x:Name="WirelessMessage" Style="{StaticResource Secondary}" Margin="0,0,0,12"/>
         <TextBlock Text="Phone app" Style="{StaticResource SectionTitle}"/>
         <c:SettingCard x:Name="AppCard" Header="PixelBridge for Android" Glyph="&#xE74C;">
             <Button Content="Install or update…" Click="Install_Click"/>
