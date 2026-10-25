@@ -42,11 +42,13 @@ final class WirelessTests: XCTestCase {
         let executable = directory.appendingPathComponent("adb-fixture")
         let marker = directory.appendingPathComponent("enabled").path
         let commands = directory.appendingPathComponent("commands").path
+        let discovery = directory.appendingPathComponent("discovery").path
         let script = """
         #!/bin/sh
         printf '%s\\n' "$*" >> '\(commands)'
         if [ "$1" = devices ]; then
           echo 'phone device'
+          if [ ! -f '\(discovery)' ]; then touch '\(discovery)'; sleep 0.6; exit 0; fi
           if [ -f '\(marker)' ]; then echo '192.168.1.20:5555 device'; fi
           exit 0
         fi
@@ -66,8 +68,9 @@ final class WirelessTests: XCTestCase {
         var saved: [BridgeSettings] = []
         let session = DeviceSession(settings: settings, saveSettings: { saved.append($0) })
         session.start()
-        for _ in 0..<80 { if session.adb != nil { break }; try await Task.sleep(nanoseconds: 20_000_000) }
+        for _ in 0..<80 { if FileManager.default.fileExists(atPath: discovery) { break }; try await Task.sleep(nanoseconds: 20_000_000) }
         let enabled = try await session.enableWireless()
+        try await Task.sleep(nanoseconds: 800_000_000) // A stale discovery cannot reset the Wi-Fi transport.
         XCTAssertTrue(enabled.contains("verified")); XCTAssertEqual(session.serial, "192.168.1.20:5555")
         XCTAssertEqual(session.settings.wirelessSerial, "phone"); XCTAssertEqual(session.transportLabel, "Wi-Fi")
         let disabled = try await session.disableWireless()

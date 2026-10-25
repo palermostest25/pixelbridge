@@ -129,6 +129,7 @@ public sealed class DeviceSession : IAsyncDisposable
     public string TransportLabel => IsWireless || Serial.Contains(':') || Serial.StartsWith("adb-") ? "Wi-Fi" : "USB";
     private string PairingIdentity => IsWireless ? _settings.WirelessSerial : Serial;
     private int _wirelessChanging;
+    private int _wirelessGeneration;
     private DateTime _nextWirelessAttempt = DateTime.MinValue;
 
     /// <summary>User chose "Use this phone": remember its codename and serial, then connect.</summary>
@@ -195,6 +196,7 @@ public sealed class DeviceSession : IAsyncDisposable
     private async Task TickAsync(CancellationToken ct)
     {
         if (Volatile.Read(ref _wirelessChanging) != 0) return;
+        var generation = Volatile.Read(ref _wirelessGeneration);
         var adbPath = AdbClient.Locate(_settings.AdbPath);
         if (adbPath is null) { SetState(LinkState.NoAdb, OperatingSystem.IsWindows() ? "adb.exe not found; install Android platform-tools or set its path in Settings" : "adb not found; install it (e.g. sudo apt install adb) or set its path in Settings"); return; }
         if (Adb?.AdbPath != adbPath) Adb = new AdbClient(adbPath);
@@ -211,6 +213,7 @@ public sealed class DeviceSession : IAsyncDisposable
         }
 
         var devices = await Adb.DevicesAsync(ct).ConfigureAwait(false);
+        if (generation != Volatile.Read(ref _wirelessGeneration)) return;
         if (_settings.AutoConnect && WirelessAdb.ValidEndpoint(WirelessEndpoint) && DateTime.UtcNow >= _nextWirelessAttempt &&
             (_settings.TargetSerial.Length == 0 || _settings.TargetSerial == _settings.WirelessSerial || _settings.TargetSerial == WirelessEndpoint || _settings.TargetSerial == _settings.WirelessService) &&
             !devices.Any(d => (d.Serial == WirelessEndpoint || d.Serial == _settings.WirelessService) && d.State == "device"))
@@ -219,12 +222,14 @@ public sealed class DeviceSession : IAsyncDisposable
             if (WirelessSecure)
             {
                 var services = await Adb.RunAsync(["mdns", "services"], TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+                if (generation != Volatile.Read(ref _wirelessGeneration)) return;
                 var candidate = WirelessAdb.Discover(services.StdOut, identity: _settings.WirelessSerial);
                 if (candidate is { } next)
                 {
                     await Adb.RunAsync(["connect", next.Endpoint], TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
                     var serviceIdentity = await Adb.GetPropAsync(next.Service, "ro.serialno", ct).ConfigureAwait(false);
                     var endpointIdentity = serviceIdentity == _settings.WirelessSerial ? serviceIdentity : await Adb.GetPropAsync(next.Endpoint, "ro.serialno", ct).ConfigureAwait(false);
+                    if (generation != Volatile.Read(ref _wirelessGeneration)) return;
                     if (endpointIdentity == _settings.WirelessSerial)
                     { _settings.WirelessEndpoint = next.Endpoint; _settings.WirelessService = next.Service; _saveSettings(); }
                 }
@@ -232,7 +237,7 @@ public sealed class DeviceSession : IAsyncDisposable
             await Adb.RunAsync(["connect", WirelessEndpoint], TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
             devices = await Adb.DevicesAsync(ct).ConfigureAwait(false);
         }
-        if (Volatile.Read(ref _wirelessChanging) != 0) return;
+        if (generation != Volatile.Read(ref _wirelessGeneration) || Volatile.Read(ref _wirelessChanging) != 0) return;
         var selected = WirelessAdb.Selection(_settings.TargetSerial, WirelessEndpoint, _settings.WirelessSerial, devices, _settings.WirelessService);
         if (selected.Length == 0)
         {
@@ -387,6 +392,7 @@ public sealed class DeviceSession : IAsyncDisposable
     public void RetryNow()
     {
         _nextAttempt = DateTime.MinValue;
+        _nextWirelessAttempt = DateTime.MinValue;
         _backoffSec = 2;
         _settings.AutoConnect = true;
     }
@@ -557,6 +563,7 @@ public sealed class DeviceSession : IAsyncDisposable
     public async Task<string> EnableWirelessAsync()
     {
         if (Interlocked.CompareExchange(ref _wirelessChanging, 1, 0) != 0) throw new IOException("Wireless setup is already running.");
+        Interlocked.Increment(ref _wirelessGeneration);
         var auto = _settings.AutoConnect;
         try
         {
@@ -596,6 +603,7 @@ public sealed class DeviceSession : IAsyncDisposable
             throw new IOException("Enter the private IPv4 address:port and six-digit code shown by Android. For an already paired phone, enter its connection address.");
         if (WirelessEndpoint.Length > 0 && !WirelessSecure) throw new IOException("Turn off the existing USB-enabled wireless connection first.");
         if (Interlocked.CompareExchange(ref _wirelessChanging, 1, 0) != 0) throw new IOException("Wireless setup is already running.");
+        Interlocked.Increment(ref _wirelessGeneration);
         var auto = _settings.AutoConnect;
         try
         {
@@ -639,6 +647,7 @@ public sealed class DeviceSession : IAsyncDisposable
     public async Task<string> DisableWirelessAsync()
     {
         if (Interlocked.CompareExchange(ref _wirelessChanging, 1, 0) != 0) throw new IOException("Wireless setup is already running.");
+        Interlocked.Increment(ref _wirelessGeneration);
         var auto = _settings.AutoConnect;
         try
         {

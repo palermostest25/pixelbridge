@@ -70,12 +70,13 @@ public class WirelessTests
         var dir = Path.Combine(Path.GetTempPath(), "pb-wireless-" + Guid.NewGuid()); Directory.CreateDirectory(dir);
         try
         {
-            var adb = Path.Combine(dir, "adb-fixture"); var commands = Path.Combine(dir, "commands"); var enabled = Path.Combine(dir, "enabled");
+            var adb = Path.Combine(dir, "adb-fixture"); var commands = Path.Combine(dir, "commands"); var enabled = Path.Combine(dir, "enabled"); var discovery = Path.Combine(dir, "discovery");
             await File.WriteAllTextAsync(adb, $"""
                 #!/bin/sh
                 printf '%s\n' "$*" >> '{commands}'
                 if [ "$1" = devices ]; then
                   echo 'phone device'
+                  if [ ! -f '{discovery}' ]; then touch '{discovery}'; sleep 0.6; exit 0; fi
                   if [ -f '{enabled}' ]; then echo '192.168.1.20:5555 device'; fi
                   exit 0
                 fi
@@ -94,8 +95,9 @@ public class WirelessTests
             var pairing = new PairingStore(dir); var key = pairing.CreateAndSave("phone"); Array.Clear(key);
             var originalDate = pairing.PairedUtc("phone"); var saves = 0;
             await using var session = new DeviceSession(settings, pairing, () => saves++); session.Start();
-            for (var i = 0; i < 100 && session.Adb == null; i++) await Task.Delay(20);
+            for (var i = 0; i < 100 && !File.Exists(discovery); i++) await Task.Delay(20);
             Assert.Contains("verified", await session.EnableWirelessAsync());
+            await Task.Delay(800); // The stale discovery response must not change the newly selected Wi-Fi transport.
             Assert.Equal("192.168.1.20:5555", session.Serial); Assert.Equal("Wi-Fi", session.TransportLabel);
             Assert.Equal(originalDate, session.PairedUtc); Assert.False(settings.AutoConnect); Assert.False(settings.WirelessSecure);
             Assert.Contains("off", await session.DisableWirelessAsync());

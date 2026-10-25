@@ -86,6 +86,7 @@ public final class DeviceSession: ObservableObject {
     public let notification = PassthroughSubject<[String: Any], Never>()
 
     private var wirelessChanging = false
+    private var wirelessGeneration = 0
     private var nextWirelessAttempt = Date.distantPast
     public var wirelessEndpoint: String { settings.wirelessEndpoint ?? "" }
     public var wirelessSecure: Bool { settings.wirelessSecure ?? false }
@@ -116,6 +117,7 @@ public final class DeviceSession: ObservableObject {
 
     private func tick() async {
         guard !wirelessChanging else { return }
+        let generation = wirelessGeneration
         guard let path = AdbClient.locate(configured: settings.adbPath) else { set(.noAdb, "Install adb: brew install android-platform-tools"); return }
         if adb?.path != path { adb = AdbClient(path: path) }
         if isConnected {
@@ -124,16 +126,19 @@ public final class DeviceSession: ObservableObject {
         }
         guard let adb else { return }
         var discovery = await adb.run(["devices", "-l"], timeout: 10)
+        guard generation == wirelessGeneration else { return }
         if settings.autoConnect, WirelessAdb.validEndpoint(wirelessEndpoint), Date() >= nextWirelessAttempt,
            settings.targetSerial.isEmpty || settings.targetSerial == settings.wirelessSerial || settings.targetSerial == wirelessEndpoint || settings.targetSerial == settings.wirelessService,
            !AdbClient.parseDevices(discovery.stdout).contains(where: { ($0.serial == wirelessEndpoint || $0.serial == settings.wirelessService) && $0.state == "device" }) {
             nextWirelessAttempt = Date().addingTimeInterval(30)
             if wirelessSecure, let identity = settings.wirelessSerial {
                 let services = await adb.run(["mdns", "services"], timeout: 5)
+                guard generation == wirelessGeneration else { return }
                 if let candidate = WirelessAdb.discover(services.stdout, identity: identity) {
                     _ = await adb.run(["connect", candidate.endpoint], timeout: 5)
                     let serviceIdentity = await adb.getprop(candidate.service, "ro.serialno")
                     let endpointIdentity = serviceIdentity == identity ? identity : await adb.getprop(candidate.endpoint, "ro.serialno")
+                    guard generation == wirelessGeneration else { return }
                     if endpointIdentity == identity {
                         settings.wirelessEndpoint = candidate.endpoint; settings.wirelessService = candidate.service; saveSettings(settings)
                     }
@@ -142,7 +147,7 @@ public final class DeviceSession: ObservableObject {
             _ = await adb.run(["connect", wirelessEndpoint], timeout: 5)
             discovery = await adb.run(["devices", "-l"], timeout: 10)
         }
-        guard !wirelessChanging else { return }
+        guard !wirelessChanging, generation == wirelessGeneration else { return }
         guard discovery.ok else {
             set(.error, "Phone discovery failed: \(discovery.stderr.isEmpty ? discovery.stdout : discovery.stderr)")
             return
@@ -183,7 +188,7 @@ public final class DeviceSession: ObservableObject {
         await connect()
     }
 
-    public func retryNow() { nextAttempt = .distantPast; backoff = 2; settings.autoConnect = true }
+    public func retryNow() { nextAttempt = .distantPast; nextWirelessAttempt = .distantPast; backoff = 2; settings.autoConnect = true }
 
     private func needsUser(_ s: LinkState, _ d: String) { nextAttempt = .distantFuture; set(s, d) }
 
@@ -369,7 +374,7 @@ public final class DeviceSession: ObservableObject {
     /// Called only after the user accepts the network-debugging explanation.
     public func enableWireless() async throws -> String {
         guard !wirelessChanging, !busy, let adb else { throw ProtocolError.malformed("Wait for the current connection, then try again.") }
-        wirelessChanging = true
+        wirelessChanging = true; wirelessGeneration += 1
         defer { wirelessChanging = false }
         let usb = serial
         let devices = await adb.devices()
@@ -407,12 +412,12 @@ public final class DeviceSession: ObservableObject {
         guard wirelessEndpoint.isEmpty || wirelessSecure else { throw ProtocolError.malformed("Turn off the existing USB-enabled wireless connection first.") }
         guard let path = AdbClient.locate(configured: settings.adbPath) else { throw ProtocolError.malformed("Install or locate ADB first.") }
         let adb = AdbClient(path: path); self.adb = adb
-        wirelessChanging = true
+        wirelessChanging = true; wirelessGeneration += 1
         let auto = settings.autoConnect
         defer { wirelessChanging = false; settings.autoConnect = auto; nextAttempt = .distantPast }
         if !code.isEmpty {
-        let result = await adb.run(["pair", address, code], timeout: 20)
-        guard result.ok, result.stdout.contains("Successfully paired") else { throw ProtocolError.malformed("Pairing failed. Keep Android's pairing-code dialog open and try its current address and code. Update platform-tools if ADB does not support pairing.") }
+            let result = await adb.run(["pair", address, code], timeout: 20)
+            guard result.ok, result.stdout.contains("Successfully paired") else { throw ProtocolError.malformed("Pairing failed. Keep Android's pairing-code dialog open and try its current address and code. Update platform-tools if ADB does not support pairing.") }
         }
         let services = await adb.run(["mdns", "services"], timeout: 5)
         let candidate = WirelessAdb.discover(services.stdout, host: String(address.split(separator: ":")[0]))
@@ -444,7 +449,7 @@ public final class DeviceSession: ObservableObject {
 
     public func disableWireless() async throws -> String {
         guard !wirelessChanging, !busy, let adb, let identity = settings.wirelessSerial else { throw ProtocolError.malformed("Wait for the current connection, then try again.") }
-        wirelessChanging = true
+        wirelessChanging = true; wirelessGeneration += 1
         let auto = settings.autoConnect
         defer { wirelessChanging = false; settings.autoConnect = auto; nextAttempt = .distantPast }
         if wirelessSecure {
