@@ -41,7 +41,7 @@ public struct BridgeSettings: Codable, Sendable {
 @MainActor
 public final class DeviceSession: ObservableObject {
     public static let package = "dev.pixelbridge.app"
-    public static let expectedAppVersion = "0.4.3"
+    public static let expectedAppVersion = "0.4.4"
     private static let approved: Set<String> = ["panther"]
     private static let channelPorts: [(String, Int)] = [("control", 27183), ("video", 27184), ("audio", 27185), ("telemetry", 27186)]
 
@@ -430,8 +430,8 @@ public final class DeviceSession: ObservableObject {
             target = candidate.service; identity = await adb.getprop(target, "ro.serialno")
         }
         guard !identity.isEmpty else { throw ProtocolError.malformed("ADB paired, but could not connect. Use the connection port on Android's main Wireless debugging page; it differs from the pairing port.") }
-        let tlsPort = await adb.getprop(target, "service.adb.tls.port")
-        guard tlsPort == String(endpoint.split(separator: ":")[1]) else { throw ProtocolError.malformed("This is not the phone's encrypted wireless connection port. Use the address on Android's main Wireless debugging page.") }
+        let tlsPort = await WirelessAdb.readTlsPort(adb, serial: target)
+        guard tlsPort == Int(endpoint.split(separator: ":")[1]) else { throw ProtocolError.malformed("This is not the phone's encrypted wireless connection port. Use the address on Android's main Wireless debugging page.") }
         await disconnect()
         settings.targetSerial = identity
         settings.wirelessEndpoint = endpoint; settings.wirelessSerial = identity

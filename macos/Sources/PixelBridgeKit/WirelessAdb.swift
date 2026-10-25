@@ -33,6 +33,20 @@ public enum WirelessAdb {
         return nil
     }
 
+    public static func tlsPort(_ output: String) -> Int? {
+        let text = output.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let port = Int(text), (1...65535).contains(port) { return port }
+        guard let match = text.range(of: #"(?m)^\s*tls_port=(\d+)\s*$"#, options: .regularExpression),
+              let port = Int(text[match].split(separator: "=").last!.trimmingCharacters(in: .whitespacesAndNewlines)), (1...65535).contains(port) else { return nil }
+        return port
+    }
+
+    public static func readTlsPort(_ adb: AdbClient, serial: String) async -> Int? {
+        if let port = tlsPort(await adb.getprop(serial, "service.adb.tls.port")) { return port }
+        // New Android releases report the current port through the ADB service dump.
+        return tlsPort(await adb.shell(serial, "dumpsys adb | grep -E '^ *tls_port='", timeout: 5).stdout)
+    }
+
     public static func validCode(_ code: String) -> Bool { code.count == 6 && code.utf8.allSatisfy { (48...57).contains($0) } }
 
     public static func discover(_ output: String, host: String? = nil, identity: String? = nil) -> (endpoint: String, service: String)? {

@@ -30,7 +30,7 @@ struct PhoneToolsView: View {
                     Label("Open an app", systemImage: "square.grid.2x2").font(.headline)
                     Picker("App", selection: $selectedApp) { Text("Choose an app").tag(nil as String?); ForEach(phone.apps) { app in Text(app.text("name")).tag(Optional(app.id)) } }.labelsHidden()
                     HStack { Button("Open on phone") { if let app = phone.apps.first(where: { $0.id == selectedApp }) { Task { await phone.launch(app) } } }.disabled(!session.isConnected || selectedApp == nil); Button("Show screen") { model.openPhoneScreen() }.disabled(!session.isConnected) }
-                    Text("App launching and screen controls use this computer’s existing USB debugging authorization.").font(.caption).foregroundStyle(.secondary)
+                    Text("App launching and screen controls use this computer’s existing debugging authorization.").font(.caption).foregroundStyle(.secondary)
                 }.frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .leading, spacing: 12) {
                     Label("Display & restart", systemImage: "power").font(.headline)

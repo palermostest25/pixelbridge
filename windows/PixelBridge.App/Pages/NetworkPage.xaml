@@ -94,9 +94,13 @@
         </Border>
 
         <TextBlock Text="Wi-Fi hotspot" Style="{StaticResource SectionTitle}"/>
-        <c:SettingCard Header="Phone hotspot" Description="Turn it on from the phone. Android won't let apps start it, and it switches off when the phone restarts. Turn off 'Turn off hotspot automatically' to keep it on." Glyph="&#xE704;">
-            <Button Content="Open hotspot settings" Click="OpenTether_Click"/>
+        <c:SettingCard x:Name="HotspotCard" Header="Phone hotspot" Description="Uses the phone's saved hotspot name and password. Mobile data and extra battery may be used." Glyph="&#xE704;">
+            <StackPanel Orientation="Horizontal">
+                <Button x:Name="HotspotToggle" Content="Turn on hotspot…" Click="Hotspot_Click" Margin="0,0,8,0"/>
+                <Button Content="Phone settings" Click="OpenTether_Click"/>
+            </StackPanel>
         </c:SettingCard>
+        <TextBlock x:Name="HotspotMessage" Style="{StaticResource Secondary}" Margin="2,8,0,0"/>
         <TextBlock Style="{StaticResource Secondary}" Margin="2,10,0,0"
                    Text="USB tethering gives Windows a real network adapter through Android's own tethering. It's an internet connection, not a Wi-Fi card: Windows can't scan, join networks or use monitor mode through it."/>
     </StackPanel>

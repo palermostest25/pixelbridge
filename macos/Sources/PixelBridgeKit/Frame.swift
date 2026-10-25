@@ -56,7 +56,8 @@ public struct Frame: Sendable {
     }
 }
 
-public enum ProtocolError: Error, CustomStringConvertible {
+public enum ProtocolError: Error, CustomStringConvertible, LocalizedError {
+    public var errorDescription: String? { description }
     case badVersion(UInt8), tooLarge(UInt32, Int), unknownFlags(UInt16), badSequence(UInt64, UInt64), closed, malformed(String)
     public var description: String {
         switch self {

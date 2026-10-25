@@ -33,6 +33,8 @@ public class WirelessTests
     [Fact]
     public void OnlyUseWifiInterface()
     {
+        Assert.Equal(42261, WirelessAdb.TlsPort("  tls_port=42261\n"));
+        Assert.Null(WirelessAdb.TlsPort("tls_port=-1"));
         var output = "1: lo inet 127.0.0.1/8 scope host\n2: rmnet0 inet 10.12.0.1/24 scope global\n3: wlan0 inet 192.168.1.20/24 brd 192.168.1.255 scope global wlan0\n";
         Assert.Equal("192.168.1.20", WirelessAdb.WifiAddress(output));
         Assert.Null(WirelessAdb.WifiAddress("2: wlan0 inet 8.8.8.8/24 scope global\n"));

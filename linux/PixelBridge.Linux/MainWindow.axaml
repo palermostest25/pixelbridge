@@ -205,7 +205,19 @@
                                 <TextBlock x:Name="WifiText" Classes="secondary"/>
                             </StackPanel>
                         </Border>
-                        <TextBlock Classes="secondary" Text="Linux uses the phone through its cdc_ncm driver, with no install needed. It's an internet connection, not a Wi-Fi card. Turn the hotspot on from the phone."/>
+                        <Border Classes="card">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Wi-Fi hotspot" FontWeight="SemiBold"/>
+                                <TextBlock x:Name="HotspotDetail" Classes="secondary" TextWrapping="Wrap" Text="Uses the phone's saved hotspot name and password. Mobile data and extra battery may be used."/>
+                                <WrapPanel>
+                                    <Button x:Name="HotspotToggle" Content="Turn on hotspot…" Click="Hotspot_Click" Margin="0,0,10,0"/>
+                                    <Button Content="Refresh hotspot" Click="HotspotRefresh_Click" Margin="0,0,10,0"/>
+                                    <Button Content="Phone settings" Click="HotspotSettings_Click"/>
+                                </WrapPanel>
+                                <TextBlock x:Name="HotspotMessage" Classes="secondary" TextWrapping="Wrap"/>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Classes="secondary" Text="Linux uses the phone through its cdc_ncm driver, with no install needed. It's an internet connection, not a Wi-Fi card. Use the hotspot controls above to share internet over Wi-Fi."/>
                     </StackPanel>
 
                     <!-- BLUETOOTH -->
