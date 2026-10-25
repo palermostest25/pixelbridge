@@ -93,7 +93,7 @@ public sealed class BridgeSettings
 public sealed class DeviceSession : IAsyncDisposable
 {
     public const string Package = "dev.pixelbridge.app";
-    public const string ExpectedAppVersion = "0.4.3";
+    public const string ExpectedAppVersion = "0.4.4";
     private static readonly (string name, int port)[] Channels = [("control", 27183), ("video", 27184), ("audio", 27185), ("telemetry", 27186)];
 
     private readonly BridgeSettings _settings;
