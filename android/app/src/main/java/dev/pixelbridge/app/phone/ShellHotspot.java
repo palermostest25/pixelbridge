@@ -9,7 +9,9 @@ import android.os.Build;
 import android.os.Looper;
 import org.json.JSONObject;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Field;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -33,8 +35,7 @@ public final class ShellHotspot {
             }
             Looper.prepareMainLooper();
             Context context = ShellCallAudio.shellContext();
-            manager = (TetheringManager) context.getSystemService("tethering");
-            if (manager == null) throw new UnsupportedOperationException("Android tethering controls are unavailable.");
+            manager = shellTetheringManager(context);
             AtomicBoolean enabled = new AtomicBoolean();
             CountDownLatch initial = new CountDownLatch(1);
             observer = new TetheringManager.TetheringEventCallback() {
@@ -61,7 +62,9 @@ public final class ShellHotspot {
                             @Override public void onTetheringFailed(int error) { failure.set(error); accepted.countDown(); }
                         });
                     if (!accepted.await(12, TimeUnit.SECONDS)) throw new IllegalStateException("Hotspot request timed out. Check Android for a carrier or permission prompt.");
-                    if (failure.get() != 0) throw new IllegalStateException("Android could not start the hotspot (error " + failure.get() + "). Check your carrier's hotspot support and Android settings.");
+                    if (failure.get() != 0) throw new IllegalStateException(failure.get() == 14
+                        ? "Android did not authorize hotspot control. Open the phone's hotspot settings instead."
+                        : "Android could not start the hotspot (error " + failure.get() + "). Check your carrier's hotspot support and Android settings.");
                 } else {
                     // The privileged shell may stop an existing hotspot started from Android Settings too.
                     TetheringManager.class.getMethod("stopTethering", int.class).invoke(manager, TetheringManager.TETHERING_WIFI);
@@ -79,5 +82,17 @@ public final class ShellHotspot {
             if (manager != null && observer != null) try { manager.unregisterTetheringEventCallback(observer); } catch (Throwable ignored) { }
         }
         System.exit(exit);
+    }
+
+    private static TetheringManager shellTetheringManager(Context context) throws Exception {
+        TetheringManager service = (TetheringManager) context.getSystemService("tethering");
+        if (service == null) throw new UnsupportedOperationException("Android tethering controls are unavailable.");
+        // ContextWrapper delegates service lookup to its base. Keep the existing system
+        // connector, but attribute requests to our actual shell UID/package, as required
+        // by TetheringService. No permission or device configuration is changed.
+        Field supplier = TetheringManager.class.getDeclaredField("mConnectorSupplier");
+        supplier.setAccessible(true);
+        return TetheringManager.class.getConstructor(Context.class, Supplier.class)
+            .newInstance(context, supplier.get(service));
     }
 }
