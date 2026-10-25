@@ -39,6 +39,14 @@ class MainActivity : Activity() {
         fun button(label: String, onClick: () -> Unit) =
             root.addView(Button(this).apply { text = label; setOnClickListener { onClick() } })
 
+        root.addView(TextView(this).apply {
+            text = "Connect by USB or Wi-Fi. For encrypted wireless pairing (Android 11+), enable Wireless debugging in Developer options, choose Pair device with pairing code, then enter its address and code in PixelBridge on your computer → Phone screen → Pair without a cable. Keep both devices on the same private Wi-Fi network."
+            textSize = 14f; setPadding(0, 0, 0, 20)
+        })
+        button("Wireless setup: open Developer options…") {
+            try { startActivity(Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)) }
+            catch (_: android.content.ActivityNotFoundException) { startActivity(Intent(Settings.ACTION_SETTINGS)) }
+        }
         button("Start bridge") { BridgeService.start(this) }
         button("Allow camera") { askPermission(Manifest.permission.CAMERA) }
         button("Allow messages, calling, contacts and call history") {
@@ -63,7 +71,7 @@ class MainActivity : Activity() {
         }
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
         root.addView(CheckBox(this).apply {
-            text = "Keep the USB bridge available after restarting"
+            text = "Keep the bridge available after restarting"
             isChecked = prefs.getBoolean("resume_after_restart", true)
             setOnCheckedChangeListener { _, c -> prefs.edit().putBoolean("resume_after_restart", c).apply() }
         })

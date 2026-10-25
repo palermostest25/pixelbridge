@@ -299,7 +299,7 @@ class BridgeService : Service() {
         return Notification.Builder(this, CHANNEL)
             .setSmallIcon(dev.pixelbridge.app.R.drawable.ic_bridge)
             .setContentTitle("PixelBridge active")
-            .setContentText(if (paused) "Paused — camera and mic blocked" else "USB bridge listening on loopback")
+            .setContentText(if (paused) "Paused — camera and mic blocked" else "Bridge listening on loopback")
             .setContentIntent(open)
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, if (paused) "Resume" else "Pause all",

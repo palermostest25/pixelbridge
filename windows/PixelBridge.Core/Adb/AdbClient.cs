@@ -13,7 +13,7 @@ public sealed record AdbDevice(string Serial, string State, string Model, string
 
 /// <summary>
 /// Thin wrapper over adb.exe. Device commands are qualified with <c>-s SERIAL</c>.
-/// Server restart is reserved for a user-confirmed key import; no tcpip or USB-mode switching here.
+/// Server restart is reserved for user-confirmed key import. Network debugging changes require explicit wireless setup.
 /// </summary>
 public sealed partial class AdbClient(string adbPath)
 {

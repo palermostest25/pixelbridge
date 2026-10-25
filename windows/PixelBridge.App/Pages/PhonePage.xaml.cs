@@ -16,8 +16,44 @@ public partial class PhonePage : UserControl, IPage
         InitializeComponent();
     }
 
-    public void Tick() =>
+    private bool _wirelessBusy;
+
+    public void Tick()
+    {
+        WirelessSetup.IsEnabled = !_wirelessBusy && _c.Phone.Calls.Count == 0 && PixelBridge.Core.Adb.WirelessAdb.IsUsbSerial(_c.Session.Serial);
+        WirelessOff.Content = _c.Session.WirelessSecure ? "Disconnect Wi-Fi" : "Turn off wireless";
+        WirelessPair.IsEnabled = WirelessConnect.IsEnabled = !_wirelessBusy && _c.Phone.Calls.Count == 0;
+        WirelessOff.Visibility = _c.Session.WirelessEndpoint.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        WirelessOff.IsEnabled = !_wirelessBusy && _c.Phone.Calls.Count == 0;
+        WirelessCard.Description = _c.Session.WirelessEndpoint.Length > 0 ? "Saved phone: " + _c.Session.WirelessEndpoint + " · Reconnects automatically when available." : "Use a pairing code on Android 11+, or set up your trusted phone over USB. Keep both devices on the same private Wi-Fi network.";
         AppCard.Description = $"PC expects version {DeviceSession.ExpectedAppVersion}" + (_c.Session.State == LinkState.ApkOutdated ? $" · {_c.Session.StateDetail}" : "");
+    }
+
+    private async void WirelessPair_Click(object sender, RoutedEventArgs e) => await PairWirelessAsync(true);
+    private async void WirelessConnect_Click(object sender, RoutedEventArgs e) => await PairWirelessAsync(false);
+    private async Task PairWirelessAsync(bool useCode)
+    {
+        _wirelessBusy = true; Tick(); WirelessMessage.Text = "Pairing your wireless phone…";
+        var code = useCode ? WirelessCode.Password : ""; WirelessCode.Clear();
+        var connection = WirelessConnectAddress.Text.Trim();
+        try { WirelessMessage.Text = await _c.Session.PairWirelessAsync(useCode ? WirelessAddress.Text.Trim() : connection, code, connection); }
+        catch (Exception error) { WirelessMessage.Text = error.Message; }
+        finally { _wirelessBusy = false; Tick(); }
+    }
+
+    private async void Wireless_Click(object sender, RoutedEventArgs e)
+    {
+        if (MessageBox.Show(Window.GetWindow(this)!, PixelBridge.Core.Adb.WirelessAdb.Consent, "Enable wireless connection?", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
+        await ChangeWirelessAsync(true);
+    }
+    private async void WirelessOff_Click(object sender, RoutedEventArgs e) => await ChangeWirelessAsync(false);
+    private async Task ChangeWirelessAsync(bool enable)
+    {
+        _wirelessBusy = true; Tick(); WirelessMessage.Text = enable ? "Setting up your Wi-Fi connection…" : "Turning off wireless debugging…";
+        try { WirelessMessage.Text = await (enable ? _c.Session.EnableWirelessAsync() : _c.Session.DisableWirelessAsync()); }
+        catch (Exception error) { WirelessMessage.Text = error.Message; }
+        finally { _wirelessBusy = false; Tick(); }
+    }
 
     private void Mirror_Click(object sender, RoutedEventArgs e) => _c.LaunchScrcpy(false);
     private void VirtualDisplay_Click(object sender, RoutedEventArgs e) => _c.LaunchScrcpy(true);

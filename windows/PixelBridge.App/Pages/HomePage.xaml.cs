@@ -74,7 +74,7 @@ public partial class HomePage : UserControl, IPage
         bool on = s.IsConnected;
         DeviceName.Text = s.DeviceProps.GetValueOrDefault("ro.product.model") is { Length: > 0 } m ? m : "Pixel 7";
         DeviceStatus.Text = _c.PrivacyMode ? "Privacy mode is on. Camera, microphone, location and sensors are paused."
-            : on ? "Connected over USB" : $"{MainWindow.StateLabel(s.State)} · {s.StateDetail}";
+            : on ? $"Connected over {s.TransportLabel}" : $"{MainWindow.StateLabel(s.State)} · {s.StateDetail}";
         ConnectButton.Content = on ? "Disconnect" : "Connect";
         PrivacySwitch.IsChecked = _c.PrivacyMode;
         HeroGlyph.Text = on ? "" : "";
@@ -92,7 +92,7 @@ public partial class HomePage : UserControl, IPage
         // Action bar for states the user must resolve.
         (string title, string text, string button)? action = s.State switch
         {
-            LinkState.NotPaired => ("Pair this PC", "A one-time key is sent over the USB debugging connection you've already allowed.", "Pair"),
+            LinkState.NotPaired => ("Pair this PC", "A one-time key is sent over the debugging connection you've already allowed.", "Pair"),
             LinkState.ApkMissing => ("Install the phone app", "PixelBridge needs its companion app on the Pixel.", "Install…"),
             LinkState.ApkOutdated => ("Update the phone app", s.StateDetail, "Update…"),
             LinkState.Unauthorized => ("Allow USB debugging", "Accept the prompt on the phone (use Phone screen to see it).", "Open phone screen"),
@@ -134,7 +134,7 @@ public partial class HomePage : UserControl, IPage
         }
         else { BatteryPercent.Text = "—"; BatteryTemp.Text = ""; BatteryBar.Value = 0; BatteryDetail.Text = "Connect the phone to see battery status."; }
 
-        LinkSummary.Text = on ? $"USB · round trip {s.Clock.LastRttMs:0.0} ms" : "No active link";
+        LinkSummary.Text = on ? $"{s.TransportLabel} · round trip {s.Clock.LastRttMs:0.0} ms" : "No active link";
         LinkDetail.Text = on ? string.Join("\n", s.PortMap.Select(kv => $"{kv.Key,-10} 127.0.0.1:{kv.Value}")) : "";
         OtherDevices.Text = s.OtherDevices.Count > 0 ? $"Ignoring other ADB devices: {string.Join(", ", s.OtherDevices.Select(d => $"{d.Serial} ({d.State})"))}" : "";
 
@@ -166,7 +166,7 @@ public partial class HomePage : UserControl, IPage
         switch (_c.Session.State)
         {
             case LinkState.NotPaired:
-                if (MessageBox.Show(Window.GetWindow(this), "Pair this PC with your Pixel?\n\nA random key is sent to the PixelBridge app over the USB debugging connection you've already authorised. It's stored encrypted on both sides.",
+                if (MessageBox.Show(Window.GetWindow(this), "Pair this PC with your Pixel?\n\nA random key is sent to the PixelBridge app over the debugging connection you've already authorised. It's stored encrypted on both sides.",
                         "Pair PixelBridge", MessageBoxButton.OKCancel, MessageBoxImage.Question) == MessageBoxResult.OK)
                     await _c.Session.PairAsync();
                 break;

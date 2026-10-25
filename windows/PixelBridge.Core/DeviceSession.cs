@@ -29,6 +29,10 @@ public sealed class BridgeSettings
     public string TargetSerial { get; set; } = "";
     /// <summary>Device codenames (ro.product.device) the user has approved. Others wait for an explicit "Use this phone".</summary>
     public List<string> ApprovedDevices { get; set; } = ["panther"];
+    public string WirelessEndpoint { get; set; } = "";
+    public string WirelessSerial { get; set; } = "";
+    public string WirelessService { get; set; } = "";
+    public bool WirelessSecure { get; set; }
     public string? AdbPath { get; set; }
     public string? ScrcpyPath { get; set; }
     public bool AutoConnect { get; set; } = true;
@@ -89,11 +93,12 @@ public sealed class BridgeSettings
 public sealed class DeviceSession : IAsyncDisposable
 {
     public const string Package = "dev.pixelbridge.app";
-    public const string ExpectedAppVersion = "0.4.2";
+    public const string ExpectedAppVersion = "0.4.3";
     private static readonly (string name, int port)[] Channels = [("control", 27183), ("video", 27184), ("audio", 27185), ("telemetry", 27186)];
 
     private readonly BridgeSettings _settings;
     private readonly PairingStore _pairing;
+    private readonly Action _saveSettings;
     private readonly Dictionary<string, ChannelClient> _channels = new();
     private readonly List<int> _ownedForwards = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -117,7 +122,14 @@ public sealed class DeviceSession : IAsyncDisposable
     private readonly Dictionary<string, int> _portMap = new();
     private string _resolvedSerial = "";
     /// <summary>The serial every adb command targets (explicit setting, or the single attached phone).</summary>
-    public string Serial => _settings.TargetSerial.Length > 0 ? _settings.TargetSerial : _resolvedSerial;
+    public string Serial => _resolvedSerial.Length > 0 ? _resolvedSerial : _settings.TargetSerial;
+    public string WirelessEndpoint => _settings.WirelessEndpoint;
+    public bool WirelessSecure => _settings.WirelessSecure;
+    public bool IsWireless => WirelessEndpoint.Length > 0 && (Serial == WirelessEndpoint || Serial == _settings.WirelessService);
+    public string TransportLabel => IsWireless || Serial.Contains(':') || Serial.StartsWith("adb-") ? "Wi-Fi" : "USB";
+    private string PairingIdentity => IsWireless ? _settings.WirelessSerial : Serial;
+    private int _wirelessChanging;
+    private DateTime _nextWirelessAttempt = DateTime.MinValue;
 
     /// <summary>User chose "Use this phone": remember its codename and serial, then connect.</summary>
     public void ApproveCurrentDevice()
@@ -125,7 +137,7 @@ public sealed class DeviceSession : IAsyncDisposable
         if (DeviceProps.TryGetValue("ro.product.device", out var codename) && codename.Length > 0 && !_settings.ApprovedDevices.Contains(codename))
             _settings.ApprovedDevices.Add(codename);
         if (_settings.TargetSerial.Length == 0) _settings.TargetSerial = Serial;
-        _settings.Save();
+        _saveSettings();
         RetryNow();
     }
     public bool IsConnected => State == LinkState.Connected;
@@ -147,10 +159,11 @@ public sealed class DeviceSession : IAsyncDisposable
     public event Action<JsonObject>? RadioEvent;
     public event Action<LocationFix>? Location;
 
-    public DeviceSession(BridgeSettings settings, PairingStore? pairing = null)
+    public DeviceSession(BridgeSettings settings, PairingStore? pairing = null, Action? saveSettings = null)
     {
         _settings = settings;
         _pairing = pairing ?? new PairingStore();
+        _saveSettings = saveSettings ?? settings.Save;
     }
 
     public void Start()
@@ -181,6 +194,7 @@ public sealed class DeviceSession : IAsyncDisposable
 
     private async Task TickAsync(CancellationToken ct)
     {
+        if (Volatile.Read(ref _wirelessChanging) != 0) return;
         var adbPath = AdbClient.Locate(_settings.AdbPath);
         if (adbPath is null) { SetState(LinkState.NoAdb, OperatingSystem.IsWindows() ? "adb.exe not found; install Android platform-tools or set its path in Settings" : "adb not found; install it (e.g. sudo apt install adb) or set its path in Settings"); return; }
         if (Adb?.AdbPath != adbPath) Adb = new AdbClient(adbPath);
@@ -197,7 +211,30 @@ public sealed class DeviceSession : IAsyncDisposable
         }
 
         var devices = await Adb.DevicesAsync(ct).ConfigureAwait(false);
-        if (_settings.TargetSerial.Length == 0)
+        if (_settings.AutoConnect && WirelessAdb.ValidEndpoint(WirelessEndpoint) && DateTime.UtcNow >= _nextWirelessAttempt &&
+            (_settings.TargetSerial.Length == 0 || _settings.TargetSerial == _settings.WirelessSerial || _settings.TargetSerial == WirelessEndpoint || _settings.TargetSerial == _settings.WirelessService) &&
+            !devices.Any(d => (d.Serial == WirelessEndpoint || d.Serial == _settings.WirelessService) && d.State == "device"))
+        {
+            _nextWirelessAttempt = DateTime.UtcNow.AddSeconds(30);
+            if (WirelessSecure)
+            {
+                var services = await Adb.RunAsync(["mdns", "services"], TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+                var candidate = WirelessAdb.Discover(services.StdOut, identity: _settings.WirelessSerial);
+                if (candidate is { } next)
+                {
+                    await Adb.RunAsync(["connect", next.Endpoint], TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+                    var serviceIdentity = await Adb.GetPropAsync(next.Service, "ro.serialno", ct).ConfigureAwait(false);
+                    var endpointIdentity = serviceIdentity == _settings.WirelessSerial ? serviceIdentity : await Adb.GetPropAsync(next.Endpoint, "ro.serialno", ct).ConfigureAwait(false);
+                    if (endpointIdentity == _settings.WirelessSerial)
+                    { _settings.WirelessEndpoint = next.Endpoint; _settings.WirelessService = next.Service; _saveSettings(); }
+                }
+            }
+            await Adb.RunAsync(["connect", WirelessEndpoint], TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
+            devices = await Adb.DevicesAsync(ct).ConfigureAwait(false);
+        }
+        if (Volatile.Read(ref _wirelessChanging) != 0) return;
+        var selected = WirelessAdb.Selection(_settings.TargetSerial, WirelessEndpoint, _settings.WirelessSerial, devices, _settings.WirelessService);
+        if (selected.Length == 0)
         {
             // No phone chosen yet: adopt the one attached phone, but never guess between several.
             var phones = devices.Where(d => !d.IsEmulator && d.State is "device" or "unauthorized").ToList();
@@ -207,17 +244,17 @@ public sealed class DeviceSession : IAsyncDisposable
                 _resolvedSerial = "";
                 if (phones.Count == 0) { _presentSerial = null; _nextAttempt = DateTime.MinValue; _backoffSec = 2; }
                 OtherDevices = devices;
-                SetState(LinkState.Disconnected, phones.Count == 0 ? "No phone detected on USB" : "Several phones attached: choose one in Settings");
+                SetState(LinkState.Disconnected, phones.Count == 0 ? "No phone detected. Connect USB or check the saved phone’s Wi-Fi network." : "Several phones attached: choose one in Settings");
                 return;
             }
         }
-        else _resolvedSerial = _settings.TargetSerial;
+        else _resolvedSerial = selected;
         OtherDevices = devices.Where(d => d.Serial != Serial).ToList();
         var target = devices.FirstOrDefault(d => d.Serial == Serial);
         if (target is null)
         {
             _presentSerial = null;
-            SetState(LinkState.Disconnected, "Phone not detected on USB");
+            SetState(LinkState.Disconnected, "Phone not detected. Check USB or the saved phone’s Wi-Fi network.");
             _backoffSec = 2;
             _nextAttempt = DateTime.MinValue;
             return;
@@ -246,8 +283,14 @@ public sealed class DeviceSession : IAsyncDisposable
         if (!await _gate.WaitAsync(0, ct).ConfigureAwait(false)) return;
         try
         {
-            if (IsConnected) return;
+            if (IsConnected || Volatile.Read(ref _wirelessChanging) != 0) return;
             SetState(LinkState.Connecting, "validating device");
+            if (IsWireless)
+            {
+                var identity = await Adb.GetPropAsync(Serial, "ro.serialno", ct).ConfigureAwait(false);
+                if (identity.Length == 0 || identity != _settings.WirelessSerial)
+                { NeedsUser(LinkState.WrongDevice, "The saved Wi-Fi address does not identify your phone. Reconnect USB and set up wireless again."); return; }
+            }
             var echo = await Adb.ShellAsync(Serial, "echo pb-ok", TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
             if (!echo.Ok || !echo.StdOut.Contains("pb-ok")) { Fail(LinkState.Offline, "shell handshake failed"); return; }
             var boot = await Adb.GetPropAsync(Serial, "sys.boot_completed", ct).ConfigureAwait(false);
@@ -296,7 +339,7 @@ public sealed class DeviceSession : IAsyncDisposable
             }
             Log.Info("forwards " + string.Join(", ", _portMap.Select(kv => $"{kv.Key}=127.0.0.1:{kv.Value}")));
 
-            var key = _pairing.Load(Serial);
+            var key = _pairing.Load(PairingIdentity);
             _linkCts = new CancellationTokenSource();
             ChannelClient? control = null;
             for (int attempt = 0; attempt < 10 && control is null; attempt++)
@@ -315,7 +358,7 @@ public sealed class DeviceSession : IAsyncDisposable
 
             Interlocked.Exchange(ref _lastPongNs, HostClock.NowNs());
             _backoffSec = 2;
-            SetState(LinkState.Connected, $"{DeviceProps["ro.product.model"]} · Android {DeviceProps["ro.build.version.release"]}");
+            SetState(LinkState.Connected, $"{TransportLabel} · {DeviceProps["ro.product.model"]} · Android {DeviceProps["ro.build.version.release"]}");
             foreach (var c in _channels.Values) c.StartReading();
             _ = HeartbeatLoopAsync(_linkCts.Token);
             RefreshSensorDemand();
@@ -482,7 +525,7 @@ public sealed class DeviceSession : IAsyncDisposable
     public async Task<bool> PairAsync(CancellationToken ct = default)
     {
         if (Adb is null) return false;
-        var key = _pairing.CreateAndSave(Serial);
+        var key = _pairing.CreateAndSave(PairingIdentity);
         var b64url = Convert.ToBase64String(key).TrimEnd('=').Replace('+', '-').Replace('/', '_');
         var host = string.Concat(Environment.MachineName.Where(char.IsLetterOrDigit));
         var r = await Adb.RunAsync(["-s", Serial, "shell", "am", "start", "-n", $"{Package}/.PairActivity", "--es", "key", b64url, "--es", "host", host],
@@ -496,9 +539,9 @@ public sealed class DeviceSession : IAsyncDisposable
         return ok;
     }
 
-    public void Unpair() => _pairing.Delete(Serial);
+    public void Unpair() => _pairing.Delete(PairingIdentity);
 
-    public DateTime? PairedUtc => _pairing.PairedUtc(Serial);
+    public DateTime? PairedUtc => _pairing.PairedUtc(PairingIdentity);
 
     public async Task<AdbResult?> InstallApkAsync(string apkPath, CancellationToken ct = default)
     {
@@ -508,6 +551,120 @@ public sealed class DeviceSession : IAsyncDisposable
         _nextAttempt = DateTime.MinValue;
         if (r.Ok) SetState(LinkState.Disconnected, "installed; reconnecting");
         return r;
+    }
+
+    /// <summary>Called only after explicit network-debugging consent.</summary>
+    public async Task<string> EnableWirelessAsync()
+    {
+        if (Interlocked.CompareExchange(ref _wirelessChanging, 1, 0) != 0) throw new IOException("Wireless setup is already running.");
+        var auto = _settings.AutoConnect;
+        try
+        {
+            await _gate.WaitAsync().ConfigureAwait(false); _gate.Release();
+            var adb = Adb ?? throw new IOException("Install or locate ADB first.");
+            var usb = Serial;
+            var devices = await adb.DevicesAsync().ConfigureAwait(false);
+            if (!WirelessAdb.IsUsbSerial(usb) || !devices.Any(d => d.Serial == usb && d.State == "device"))
+                throw new IOException("Connect your trusted phone by USB first, then try again.");
+            var identity = await adb.GetPropAsync(usb, "ro.serialno").ConfigureAwait(false);
+            if (identity != usb) throw new IOException("Could not verify the USB phone's identity.");
+            var addresses = await adb.ShellAsync(usb, "ip -4 -o addr show", TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            var ip = WirelessAdb.WifiAddress(addresses.StdOut) ?? throw new IOException("Connect the phone to a private Wi-Fi network first. No Wi-Fi address was found.");
+            await DisconnectAsync().ConfigureAwait(false);
+            var enabled = await adb.RunAsync(["-s", usb, "tcpip", "5555"], TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+            if (!enabled.Ok) throw new IOException("Could not enable wireless: " + enabled.StdErr + enabled.StdOut);
+            _settings.WirelessEndpoint = ip + ":5555"; _settings.WirelessSerial = identity; _settings.WirelessService = ""; _settings.WirelessSecure = false; _settings.AutoConnect = auto; _saveSettings();
+            for (var i = 0; i < 5; i++)
+            {
+                await adb.RunAsync(["connect", WirelessEndpoint], TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                if (await adb.GetPropAsync(WirelessEndpoint, "ro.serialno").ConfigureAwait(false) == identity)
+                {
+                    _resolvedSerial = WirelessEndpoint; RetryNow();
+                    return "Wi-Fi connection verified. You can unplug USB. PixelBridge will reconnect automatically.";
+                }
+                await Task.Delay(500).ConfigureAwait(false);
+            }
+            throw new IOException("Wireless was enabled, but the phone could not be reached. Keep both devices on the same private Wi-Fi, check client isolation or firewall rules, then press Connect. USB can be used to set up again.");
+        }
+        finally { _settings.AutoConnect = auto; _nextAttempt = DateTime.MinValue; Volatile.Write(ref _wirelessChanging, 0); }
+    }
+
+    /// <summary>Android 11+ TLS pairing. The six-digit code is never saved or logged.</summary>
+    public async Task<string> PairWirelessAsync(string address, string code, string connectAddress)
+    {
+        if (!WirelessAdb.ValidEndpoint(address) || !WirelessAdb.ValidCode(code) && code.Length > 0 || connectAddress.Length > 0 && !WirelessAdb.ValidEndpoint(connectAddress) || code.Length == 0 && connectAddress.Length == 0)
+            throw new IOException("Enter the private IPv4 address:port and six-digit code shown by Android. For an already paired phone, enter its connection address.");
+        if (WirelessEndpoint.Length > 0 && !WirelessSecure) throw new IOException("Turn off the existing USB-enabled wireless connection first.");
+        if (Interlocked.CompareExchange(ref _wirelessChanging, 1, 0) != 0) throw new IOException("Wireless setup is already running.");
+        var auto = _settings.AutoConnect;
+        try
+        {
+            await _gate.WaitAsync().ConfigureAwait(false); _gate.Release();
+            var path = AdbClient.Locate(_settings.AdbPath) ?? throw new IOException("Install or locate ADB first.");
+            var adb = Adb = new AdbClient(path);
+            if (code.Length > 0)
+            {
+                var result = await adb.RunAsync(["pair", address, code], TimeSpan.FromSeconds(20)).ConfigureAwait(false);
+                if (!result.Ok || !result.StdOut.Contains("Successfully paired")) throw new IOException("Pairing failed. Keep Android's pairing-code dialog open and try its current address and code. Update platform-tools if ADB does not support pairing.");
+            }
+            var services = await adb.RunAsync(["mdns", "services"], TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            var candidate = WirelessAdb.Discover(services.StdOut, host: address.Split(':')[0]);
+            var endpoint = connectAddress.Length > 0 ? connectAddress : candidate?.Endpoint;
+            if (endpoint == null) throw new IOException("ADB paired successfully. Automatic discovery is unavailable; enter the IP address and port from Android's main Wireless debugging page, then choose Connect paired phone.");
+            await adb.RunAsync(["connect", endpoint], TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            var target = endpoint;
+            var identity = await adb.GetPropAsync(target, "ro.serialno").ConfigureAwait(false);
+            if (identity.Length == 0 && candidate is { } discovered && discovered.Endpoint == endpoint)
+            { target = discovered.Service; identity = await adb.GetPropAsync(target, "ro.serialno").ConfigureAwait(false); }
+            if (identity.Length == 0) throw new IOException("ADB paired, but could not connect. Use the connection port on Android's main Wireless debugging page; it differs from the pairing port.");
+            var tlsPort = await adb.GetPropAsync(target, "service.adb.tls.port").ConfigureAwait(false);
+            if (tlsPort != endpoint.Split(':')[1]) throw new IOException("This is not the phone's encrypted wireless connection port. Use the address on Android's main Wireless debugging page.");
+            await DisconnectAsync().ConfigureAwait(false);
+            _settings.TargetSerial = identity; _settings.WirelessEndpoint = endpoint; _settings.WirelessSerial = identity;
+            _settings.WirelessService = candidate?.Endpoint == endpoint ? candidate.Value.Service : "";
+            _settings.WirelessSecure = true; _settings.AutoConnect = auto; _saveSettings();
+            _resolvedSerial = target; RetryNow();
+            return "Encrypted Wi-Fi connection ready. If asked, choose Pair to finish pairing the PixelBridge companion.";
+        }
+        finally { _settings.AutoConnect = auto; _nextAttempt = DateTime.MinValue; Volatile.Write(ref _wirelessChanging, 0); }
+    }
+
+    private void ClearWireless(string identity)
+    {
+        if (_settings.TargetSerial == WirelessEndpoint || _settings.TargetSerial == _settings.WirelessService) _settings.TargetSerial = identity;
+        _settings.WirelessEndpoint = ""; _settings.WirelessSerial = ""; _settings.WirelessService = ""; _settings.WirelessSecure = false; _saveSettings();
+        _resolvedSerial = ""; RetryNow();
+    }
+
+    public async Task<string> DisableWirelessAsync()
+    {
+        if (Interlocked.CompareExchange(ref _wirelessChanging, 1, 0) != 0) throw new IOException("Wireless setup is already running.");
+        var auto = _settings.AutoConnect;
+        try
+        {
+            await _gate.WaitAsync().ConfigureAwait(false); _gate.Release();
+            var adb = Adb ?? throw new IOException("Install or locate ADB first.");
+            var identity = _settings.WirelessSerial;
+            if (WirelessSecure)
+            {
+                await DisconnectAsync().ConfigureAwait(false);
+                if (_settings.WirelessService.Length > 0) await adb.RunAsync(["disconnect", _settings.WirelessService], TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                await adb.RunAsync(["disconnect", WirelessEndpoint], TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+                _settings.AutoConnect = auto; ClearWireless(identity);
+                return "Wi-Fi connection removed. Turn off Wireless debugging in Android settings to disable the phone's listener.";
+            }
+            var devices = await adb.DevicesAsync().ConfigureAwait(false);
+            var target = devices.FirstOrDefault(d => (d.Serial == WirelessEndpoint || d.Serial == _settings.WirelessService || d.Serial == identity) && d.State == "device")?.Serial;
+            if (target == null || identity.Length == 0 || await adb.GetPropAsync(target, "ro.serialno").ConfigureAwait(false) != identity)
+                throw new IOException("Reconnect the phone by USB so PixelBridge can turn off its wireless listener.");
+            await DisconnectAsync().ConfigureAwait(false);
+            var result = await adb.RunAsync(["-s", target, "usb"], TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+            if (!result.Ok) throw new IOException("Could not turn off wireless: " + result.StdErr + result.StdOut);
+            await adb.RunAsync(["disconnect", WirelessEndpoint], TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            _settings.AutoConnect = auto; ClearWireless(identity);
+            return "Wireless debugging is off. Connect USB to continue.";
+        }
+        finally { _settings.AutoConnect = auto; _nextAttempt = DateTime.MinValue; Volatile.Write(ref _wirelessChanging, 0); }
     }
 
     public async Task DisconnectAsync()
