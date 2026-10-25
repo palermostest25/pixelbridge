@@ -89,6 +89,8 @@ private struct MenuBarCallsView: View {
                 Button("Open PixelBridge", action: onOpen)
                 Spacer()
                 Menu {
+                    SettingsLink { Text("Settings…") }
+                    Divider()
                     Button(model.cameraOn ? "Stop camera" : "Start camera") { model.cameraOn ? model.stopCamera() : model.startCamera() }.disabled(!session.isConnected)
                     Button(model.micOn ? "Stop phone microphone" : "Start phone microphone") { model.micOn ? model.stopMic() : model.startMic() }.disabled(!session.isConnected)
                     Toggle("Save power (15 fps)", isOn: $model.savePower)

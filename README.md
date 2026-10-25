@@ -52,6 +52,8 @@ Wireless transport selection, address validation and wrong-phone rejection have 
 
 ## Reconnect and background use
 
+On macOS, **Settings → Launch at login** starts PixelBridge when you sign in. **Start in the menu bar** is on by default: the bridge and call controls run without opening the dashboard or adding a Dock icon. Open the dashboard from the menu-bar icon; closing it returns PixelBridge to the menu bar. A phone already connected at startup reconnects quietly.
+
 Plugging in the selected phone brings the dashboard forward by default; disable this in Settings if preferred. PixelBridge waits through boot, opens the companion, recreates connection forwards and reconnects using the saved pairing. Android requires its first unlock after a restart before encrypted phone data is available. This cannot be skipped. On a screenless phone, open **Phone Screen** from an already authorized computer to enter that unlock yourself.
 
 **Import ADB keys** is available on the Phone Screen page on macOS, Windows and Linux, and in Mac Settings. Copy both `adbkey` and `adbkey.pub` from the other computer’s `.android` directory, keep them together, then select either file. PixelBridge checks the private/public match and shows a fingerprint before applying it. The existing keys are backed up in `.android/pixelbridge-key-backups` with private permissions. Applying the import restarts the shared ADB server and briefly interrupts other ADB apps; canceling leaves everything unchanged. This restores an identity the phone already trusts; it cannot bypass Android’s USB-debugging approval. Android app-signing keys such as `debug.keystore` are separate and are not accepted here.

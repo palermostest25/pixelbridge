@@ -74,6 +74,7 @@ public final class DeviceSession: ObservableObject {
     // Event streams (delivered on the main actor).
     public let phoneAttached = PassthroughSubject<Void, Never>()
     private var presentSerial: String?
+    private var completedInitialDiscovery = false
     private var attemptedCompanionUpdates = Set<String>()
     public let sensor = PassthroughSubject<SensorSample, Never>()
     public let battery = PassthroughSubject<BatteryStatus, Never>()
@@ -153,6 +154,8 @@ public final class DeviceSession: ObservableObject {
             return
         }
         let devices = AdbClient.parseDevices(discovery.stdout)
+        let canPresentAttachment = completedInitialDiscovery
+        completedInitialDiscovery = true
         let target: AdbDevice
         switch AdbClient.selectTarget(devices, configuredSerial: WirelessAdb.selection(configured: settings.targetSerial, endpoint: wirelessEndpoint, identity: settings.wirelessSerial ?? "", devices: devices, service: settings.wirelessService ?? "")) {
         case .missing:
@@ -174,7 +177,12 @@ public final class DeviceSession: ObservableObject {
             discoveredSerial = device.serial
             otherDevices = devices.filter { $0.serial != device.serial }
         }
-        if presentSerial != target.serial { presentSerial = target.serial; phoneAttached.send(()) }
+        if presentSerial != target.serial {
+            presentSerial = target.serial
+            // A phone already present at launch should connect quietly. Later
+            // attachments still support the user's bring-to-front preference.
+            if canPresentAttachment { phoneAttached.send(()) }
+        }
         switch target.state {
         case "device": break
         case "unauthorized": set(.unauthorized, "Allow USB debugging for this Mac on the phone"); return

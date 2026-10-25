@@ -194,16 +194,21 @@ struct SettingsView: View {
     @AppStorage("showOnConnect") private var showOnConnect = true
     @AppStorage("autoUpdateCompanion") private var updateCompanion = true
     var body: some View {
-        Form {
-            TextField("Phone serial", text: $serial)
+        VStack(alignment: .leading, spacing: 14) {
+            StartupSettingsView()
+            Divider()
+            LabeledContent("Phone serial") { TextField("Detect automatically", text: $serial).textFieldStyle(.roundedBorder) }
             Toggle("Connect automatically over USB or Wi-Fi", isOn: $auto)
             Toggle("Bring PixelBridge forward when the phone is connected", isOn: $showOnConnect)
             Toggle("Update the paired phone companion automatically", isOn: $updateCompanion)
             Text("Updates use the bundled APK and require its signing key to match the existing phone app.").font(.caption).foregroundStyle(.secondary)
             AdbKeyImportControl()
-            Button("Save") { session.settings.targetSerial = serial; session.settings.autoConnect = auto; session.settings.save() }
+            HStack {
+                Spacer()
+                Button("Save") { session.settings.targetSerial = serial; session.settings.autoConnect = auto; session.settings.save() }
+            }
         }
-        .padding(20).frame(width: 420)
+        .padding(24).frame(width: 560)
         .onAppear { serial = session.settings.targetSerial; auto = session.settings.autoConnect }
     }
 }

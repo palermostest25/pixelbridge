@@ -30,6 +30,8 @@ struct ConnectionSmoke {
             var settings = BridgeSettings()
             settings.adbPath = executable.path
             let session = DeviceSession(settings: settings)
+            var initialAttachments = 0
+            let initialAttachment = session.phoneAttached.sink { initialAttachments += 1 }
             session.start()
             for _ in 0..<60 {
                 if !session.detail.isEmpty { break }
@@ -37,14 +39,20 @@ struct ConnectionSmoke {
             }
             require(session.state == expected, "session state for \(name): \(session.state), \(session.detail)")
             require(session.serial == serial, "resolved serial for \(name)")
+            require(initialAttachments == 0, "initial discovery stays in the menu bar for \(name)")
             if name == "none" { require(session.detail.contains("Connect USB"), "show a useful recovery instruction") }
             await session.shutdown()
+            withExtendedLifetime(initialAttachment) {}
         }
         let bootFixture = directory.appendingPathComponent("boot-fixture")
         let counter = directory.appendingPathComponent("boot-count").path
+        let discoveryMarker = directory.appendingPathComponent("discovered-once").path
         let bootScript = """
         #!/bin/sh
-        if [ "$1" = devices ]; then echo 'phone-boot device model:Pixel_7'; exit 0; fi
+        if [ "$1" = devices ]; then
+          if [ ! -f '\(discoveryMarker)' ]; then touch '\(discoveryMarker)'; echo 'List of devices attached'; else echo 'phone-boot device model:Pixel_7'; fi
+          exit 0
+        fi
         case "$*" in
           *'echo pb-ok'*) echo pb-ok ;;
           *'getprop sys.boot_completed'*)
