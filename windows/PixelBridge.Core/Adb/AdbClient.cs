@@ -12,8 +12,8 @@ public sealed record AdbResult(int ExitCode, string StdOut, string StdErr)
 public sealed record AdbDevice(string Serial, string State, string Model, string Device, bool IsEmulator);
 
 /// <summary>
-/// Thin wrapper over adb.exe. Every device command is qualified with <c>-s SERIAL</c>; never kills a
-/// user-managed server and never uses tcpip, usb-function or key-management commands.
+/// Thin wrapper over adb.exe. Device commands are qualified with <c>-s SERIAL</c>.
+/// Server restart is reserved for a user-confirmed key import; no tcpip or USB-mode switching here.
 /// </summary>
 public sealed partial class AdbClient(string adbPath)
 {

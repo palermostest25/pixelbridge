@@ -37,7 +37,7 @@ public struct BridgeSettings: Codable, Sendable {
 @MainActor
 public final class DeviceSession: ObservableObject {
     public static let package = "dev.pixelbridge.app"
-    public static let expectedAppVersion = "0.4.1"
+    public static let expectedAppVersion = "0.4.2"
     private static let approved: Set<String> = ["panther"]
     private static let channelPorts: [(String, Int)] = [("control", 27183), ("video", 27184), ("audio", 27185), ("telemetry", 27186)]
 

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
+using Avalonia.Platform.Storage;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -316,6 +317,32 @@ public partial class MainWindow : Window
     private async void Ble_Click(object? s, RoutedEventArgs e) => await _m.ScanBleAsync();
     private void Scrcpy_Click(object? s, RoutedEventArgs e) => _m.LaunchScrcpy();
     private async void Pair_Click(object? s, RoutedEventArgs e) => await _m.Session.PairAsync();
+
+    private async void ImportKeys_Click(object? sender, RoutedEventArgs e)
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new() { AllowMultiple = false, Title = "Choose adbkey (adbkey.pub must be beside it)" });
+        var path = files.FirstOrDefault()?.TryGetLocalPath(); if (path == null) return;
+        try {
+            var plan = PixelBridge.Core.Adb.AdbKeyImport.Prepare(path);
+            if (_m.Session.Adb is not { } adb) throw new IOException("Install or locate ADB first.");
+            var dialog = new Window { Title = "Import & reconnect", Width = 520, Height = 310, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+            var panel = new StackPanel { Margin = new(24), Spacing = 18 };
+            panel.Children.Add(new TextBlock { Text = "Fingerprint: " + plan.Fingerprint + "\n\nCurrent keys will be backed up. Restarting ADB briefly disconnects all ADB apps, including screen mirroring. The phone must already trust these keys, or you must approve its USB-debugging prompt.", TextWrapping = TextWrapping.Wrap });
+            var buttons = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 12 };
+            var cancel = new Button { Content = "Cancel" }; cancel.Click += (_, _) => dialog.Close(false);
+            var confirm = new Button { Content = "Import & reconnect", Classes = { "accent" } }; confirm.Click += (_, _) => dialog.Close(true);
+            buttons.Children.Add(cancel); buttons.Children.Add(confirm); panel.Children.Add(buttons); dialog.Content = panel;
+            if (!await dialog.ShowDialog<bool>(this)) return;
+            var auto = _m.Settings.AutoConnect; await _m.Session.DisconnectAsync();
+            try {
+                plan.Install();
+                var stopped = await adb.RunAsync("kill-server");
+                if (!stopped.Ok) throw new IOException("Keys were saved, but ADB could not restart. Restart ADB manually.");
+                var started = await adb.RunAsync("start-server");
+                ShowToast(started.Ok ? "ADB keys imported. Previous keys are backed up in .android/pixelbridge-key-backups." : "Keys imported. Restart ADB manually to reconnect.");
+            } finally { _m.Settings.AutoConnect = auto; if (auto) _m.Session.RetryNow(); }
+        } catch (Exception error) { ShowToast(error.Message); }
+    }
 
     private void Save_Click(object? s, RoutedEventArgs e)
     {

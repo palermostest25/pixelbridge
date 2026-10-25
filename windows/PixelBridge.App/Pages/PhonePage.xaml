@@ -25,6 +25,9 @@
         <c:SettingCard x:Name="AppCard" Header="PixelBridge for Android" Glyph="&#xE74C;">
             <Button Content="Install or update…" Click="Install_Click"/>
         </c:SettingCard>
+        <c:SettingCard Header="ADB keys from another computer" Description="Choose adbkey with adbkey.pub beside it. Current keys are backed up before reconnecting." Glyph="&#xE8D7;">
+            <Button Content="Import ADB keys…" Click="ImportKeys_Click"/>
+        </c:SettingCard>
         <c:SettingCard Header="Pairing" Description="Removes this PC's key. You'll need to pair again" Glyph="&#xE8D7;">
             <Button Content="Unpair" Click="Unpair_Click"/>
         </c:SettingCard>

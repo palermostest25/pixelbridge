@@ -17,7 +17,7 @@ public enum AdbTargetSelection: Equatable {
     case selected(AdbDevice)
 }
 
-/// adb wrapper. Every device command is qualified with `-s SERIAL`; never uses tcpip or key management.
+/// adb wrapper. Device commands use `-s SERIAL`. Server restart is reserved for a user-confirmed key import.
 public struct AdbClient: Sendable {
     public let path: String
 

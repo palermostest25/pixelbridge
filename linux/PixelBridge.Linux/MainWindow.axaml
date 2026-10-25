@@ -227,6 +227,13 @@
                             </DockPanel>
                         </Border>
                         <Border Classes="card">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="ADB keys from another computer"/>
+                                <TextBlock Classes="secondary" TextWrapping="Wrap" Text="Choose adbkey with adbkey.pub beside it. Current keys are backed up before reconnecting."/>
+                                <Button Content="Import ADB keys…" Click="ImportKeys_Click"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Classes="card">
                             <DockPanel>
                                 <Button DockPanel.Dock="Right" Content="Pair" Click="Pair_Click"/>
                                 <TextBlock x:Name="PairText" VerticalAlignment="Center"/>
