@@ -91,7 +91,7 @@ public final class ShellCallAudio {
         int mode = audio.getMode(); return mode == AudioManager.MODE_IN_CALL || mode == 5; // MODE_CALL_REDIRECT (system API)
     }
 
-    private static Context shellContext() throws Exception {
+    static Context shellContext() throws Exception {
         // Attribute audio requests to the real, already-authorized shell UID/package.
         Class<?> type = Class.forName("android.app.ActivityThread");
         Object thread = type.getMethod("systemMain").invoke(null);

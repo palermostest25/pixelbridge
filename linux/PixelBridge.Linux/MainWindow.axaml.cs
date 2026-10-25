@@ -142,6 +142,10 @@ public partial class MainWindow : Window
         StatusDot.Fill = on ? Brush("PbSuccess") : s.State == LinkState.Connecting ? Brush("PbCaution") : Brushes.Gray;
         StatusText.Text = _m.Privacy ? "Privacy mode" : on ? $"{s.DeviceProps.GetValueOrDefault("ro.product.model", "Phone")} connected" : s.State.Label();
 
+        HotspotToggle.IsEnabled = !_hotspotBusy && on && _hotspot?.Supported == true;
+        HotspotToggle.Content = _hotspotBusy ? "Checking…" : _hotspot?.Enabled == true ? "Turn off hotspot" : "Turn on hotspot…";
+        if (_page == "network" && on && DateTime.UtcNow >= _nextHotspotProbe && !_hotspotBusy) { _nextHotspotProbe = DateTime.UtcNow.AddSeconds(30); _ = RefreshHotspotAsync("status"); }
+
         // Home
         DeviceName.Text = s.DeviceProps.GetValueOrDefault("ro.product.model") is { Length: > 0 } mdl ? mdl : "Your phone";
         WirelessSetup.IsEnabled = !_wirelessBusy && _m.Phone.Calls.Count == 0 && PixelBridge.Core.Adb.WirelessAdb.IsUsbSerial(s.Serial);
@@ -322,6 +326,44 @@ public partial class MainWindow : Window
     private async void Ble_Click(object? s, RoutedEventArgs e) => await _m.ScanBleAsync();
     private void Scrcpy_Click(object? s, RoutedEventArgs e) => _m.LaunchScrcpy();
     private async void Pair_Click(object? s, RoutedEventArgs e) => await _m.Session.PairAsync();
+
+    private HotspotState? _hotspot;
+    private bool _hotspotBusy;
+    private DateTime _nextHotspotProbe = DateTime.MinValue;
+    private async void Hotspot_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_hotspotBusy) return;
+        var action = _hotspot?.Enabled == true ? "off" : "on";
+        if (action == "on") {
+            var dialog = new Window { Title = "Turn on Wi-Fi hotspot?", Width = 520, SizeToContent = SizeToContent.Height, CanResize = false, WindowStartupLocation = WindowStartupLocation.CenterOwner };
+            var panel = new StackPanel { Margin = new(24), Spacing = 18 };
+            panel.Children.Add(new TextBlock { Text = HotspotControl.EnableNotice, TextWrapping = TextWrapping.Wrap });
+            var buttons = new StackPanel { Orientation = Avalonia.Layout.Orientation.Horizontal, Spacing = 12 };
+            var cancel = new Button { Content = "Cancel" }; cancel.Click += (_, _) => dialog.Close(false);
+            var confirm = new Button { Content = "Turn on hotspot", Classes = { "accent" } }; confirm.Click += (_, _) => dialog.Close(true);
+            buttons.Children.Add(cancel); buttons.Children.Add(confirm); panel.Children.Add(buttons); dialog.Content = panel;
+            if (!await dialog.ShowDialog<bool>(this)) return;
+        }
+        await RefreshHotspotAsync(action);
+    }
+    private async void HotspotRefresh_Click(object? sender, RoutedEventArgs e) => await RefreshHotspotAsync("status");
+    private async void HotspotSettings_Click(object? sender, RoutedEventArgs e)
+    {
+        if (_m.Session.Adb == null || !_m.Session.IsConnected) return;
+        await _m.Session.Adb.ShellAsync(_m.Session.Serial, "am start -n com.android.settings/.Settings\\$TetherSettingsActivity");
+        _m.LaunchScrcpy();
+    }
+    private async Task RefreshHotspotAsync(string action)
+    {
+        if (_hotspotBusy || !_m.Session.IsConnected) return;
+        _hotspotBusy = true; HotspotMessage.Text = "";
+        try {
+            _hotspot = await HotspotControl.RunAsync(_m.Session, action);
+            HotspotDetail.Text = !_hotspot.Supported ? "Use Phone settings on this Android version. Direct controls require Android 16 or newer and authorized debugging." : _hotspot.Enabled ? "On · Uses the phone's existing hotspot name and password." : "Off · Share the phone's internet over Wi-Fi using its saved hotspot settings.";
+            if (action != "status") HotspotMessage.Text = _hotspot.Enabled ? "Android confirmed: hotspot is on." : "Android confirmed: hotspot is off.";
+        } catch (Exception error) { _hotspot = null; HotspotMessage.Text = error.Message; }
+        finally { _hotspotBusy = false; }
+    }
 
     private bool _wirelessBusy;
     private async void WirelessPair_Click(object? sender, RoutedEventArgs e) => await PairWirelessAsync(true);

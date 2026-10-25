@@ -29,6 +29,19 @@ public static class WirelessAdb
 
     public static bool ValidEndpoint(string endpoint) => endpoint.Split(':') is [var host, var port] && IsPrivateAddress(host) && port.Length > 0 && port.All(c => c is >= '0' and <= '9') && int.TryParse(port, out var n) && n is > 0 and <= 65535;
 
+    public static int? TlsPort(string output)
+    {
+        var text = output.Trim();
+        if (int.TryParse(text, out var port) && port is > 0 and <= 65535) return port;
+        var match = Regex.Match(text, @"(?m)^\s*tls_port=(\d+)\s*$");
+        return match.Success && int.TryParse(match.Groups[1].Value, out port) && port is > 0 and <= 65535 ? port : null;
+    }
+    public static async Task<int?> ReadTlsPortAsync(AdbClient adb, string serial)
+    {
+        var port = TlsPort(await adb.GetPropAsync(serial, "service.adb.tls.port").ConfigureAwait(false));
+        return port ?? TlsPort((await adb.ShellAsync(serial, "dumpsys adb | grep -E '^ *tls_port='", TimeSpan.FromSeconds(5)).ConfigureAwait(false)).StdOut);
+    }
+
     public static bool ValidCode(string code) => code.Length == 6 && code.All(c => c is >= '0' and <= '9');
     public static (string Endpoint, string Service)? Discover(string output, string? host = null, string? identity = null)
     {

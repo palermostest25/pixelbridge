@@ -11,6 +11,8 @@ public partial class NetworkPage : UserControl, IPage
     private readonly AppController _c;
     private int _refreshCountdown;
     private bool _busy;
+    private bool _hotspotBusy;
+    private HotspotState? _hotspot;
 
     public NetworkPage(AppController c)
     {
@@ -31,6 +33,7 @@ public partial class NetworkPage : UserControl, IPage
             {
                 await _c.Radio.RefreshAsync();
                 await LoadNetworksAsync();
+                if (!_hotspotBusy) await HotspotAsync("status");
             }
             Render();
         }
@@ -105,8 +108,29 @@ public partial class NetworkPage : UserControl, IPage
     {
         if (--_refreshCountdown <= 0) { _refreshCountdown = 40; _ = RefreshAsync(); }
         ScanButton.IsEnabled = _c.Session.IsConnected;
+        HotspotToggle.IsEnabled = !_hotspotBusy && _c.Session.IsConnected && _hotspot?.Supported == true;
+        HotspotToggle.Content = _hotspotBusy ? "Checking…" : _hotspot?.Enabled == true ? "Turn off hotspot" : "Turn on hotspot…";
         if (_c.Radio.WifiNetworks.Count > 0) WifiListCard.Visibility = Visibility.Visible;
         WifiStatus.Text = _c.Radio.Status;
+    }
+
+    private async void Hotspot_Click(object sender, RoutedEventArgs e)
+    {
+        if (_hotspotBusy) return;
+        var action = _hotspot?.Enabled == true ? "off" : "on";
+        if (action == "on" && MessageBox.Show(Window.GetWindow(this)!, HotspotControl.EnableNotice, "Turn on Wi-Fi hotspot?", MessageBoxButton.OKCancel, MessageBoxImage.Question) != MessageBoxResult.OK) return;
+        await HotspotAsync(action);
+    }
+    private async Task HotspotAsync(string action)
+    {
+        if (_hotspotBusy) return;
+        _hotspotBusy = true; HotspotToggle.IsEnabled = false; HotspotMessage.Text = "";
+        try {
+            _hotspot = await HotspotControl.RunAsync(_c.Session, action);
+            HotspotCard.Description = !_hotspot.Supported ? "Use Phone settings on this Android version. Direct controls require Android 16 or newer and authorized debugging." : _hotspot.Enabled ? "On · Uses the phone's existing hotspot name and password." : "Off · Share the phone's internet over Wi-Fi using its saved hotspot settings.";
+            if (action != "status") HotspotMessage.Text = _hotspot.Enabled ? "Android confirmed: hotspot is on." : "Android confirmed: hotspot is off.";
+        } catch (Exception error) { _hotspot = null; HotspotMessage.Text = error.Message; }
+        finally { _hotspotBusy = false; }
     }
 
     private async void Refresh_Click(object sender, RoutedEventArgs e) => await RefreshAsync();

@@ -625,8 +625,8 @@ public sealed class DeviceSession : IAsyncDisposable
             if (identity.Length == 0 && candidate is { } discovered && discovered.Endpoint == endpoint)
             { target = discovered.Service; identity = await adb.GetPropAsync(target, "ro.serialno").ConfigureAwait(false); }
             if (identity.Length == 0) throw new IOException("ADB paired, but could not connect. Use the connection port on Android's main Wireless debugging page; it differs from the pairing port.");
-            var tlsPort = await adb.GetPropAsync(target, "service.adb.tls.port").ConfigureAwait(false);
-            if (tlsPort != endpoint.Split(':')[1]) throw new IOException("This is not the phone's encrypted wireless connection port. Use the address on Android's main Wireless debugging page.");
+            var tlsPort = await WirelessAdb.ReadTlsPortAsync(adb, target).ConfigureAwait(false);
+            if (tlsPort != int.Parse(endpoint.Split(':')[1])) throw new IOException("This is not the phone's encrypted wireless connection port. Use the address on Android's main Wireless debugging page.");
             await DisconnectAsync().ConfigureAwait(false);
             _settings.TargetSerial = identity; _settings.WirelessEndpoint = endpoint; _settings.WirelessSerial = identity;
             _settings.WirelessService = candidate?.Endpoint == endpoint ? candidate.Value.Service : "";

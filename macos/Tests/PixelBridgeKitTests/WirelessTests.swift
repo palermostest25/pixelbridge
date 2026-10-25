@@ -3,6 +3,8 @@ import XCTest
 
 final class WirelessTests: XCTestCase {
     func testEndpointValidation() {
+        XCTAssertEqual(WirelessAdb.tlsPort("  tls_port=42261\n"), 42261)
+        XCTAssertNil(WirelessAdb.tlsPort("tls_port=-1"))
         XCTAssertEqual(ProtocolError.malformed("Reconnect USB to turn off wireless.").localizedDescription, "Reconnect USB to turn off wireless.")
         for good in ["192.168.1.2:5555", "10.20.0.2:37123", "172.16.0.2:65535", "172.31.255.2:1"] {
             XCTAssertTrue(WirelessAdb.validEndpoint(good), good)

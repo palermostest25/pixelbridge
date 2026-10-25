@@ -25,6 +25,7 @@ struct NetworkView: View {
                     }
                 }
             }
+            HotspotControlView()
             SettingRow(icon: "gearshape", title: "Tethering and hotspot settings on the phone", subtitle: "Opens Android's Hotspot & tethering screen") {
                 Button("Open") { Task { _ = await session.adb?.shell(session.serial, "am start -n com.android.settings/.Settings\\$TetherSettingsActivity") } }
             }
@@ -52,7 +53,7 @@ struct NetworkView: View {
                     }
                 }
             }
-            Text("USB tethering is an internet connection, not a Wi-Fi card: macOS can't scan or join networks through it. The phone's hotspot has to be turned on from the phone.")
+            Text("USB tethering is an internet connection, not a Wi-Fi card: macOS can't scan or join networks through it. Use the hotspot controls above to share the phone's internet over Wi-Fi.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .task { if session.isConnected { await model.refreshWifi() } }
