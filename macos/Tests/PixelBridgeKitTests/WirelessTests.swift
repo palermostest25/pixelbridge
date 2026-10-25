@@ -34,4 +34,82 @@ final class WirelessTests: XCTestCase {
         XCTAssertEqual(WirelessAdb.discover(rows, identity: "phone")?.endpoint, found?.endpoint)
         XCTAssertNil(WirelessAdb.discover(rows)); XCTAssertNil(WirelessAdb.discover(rows, identity: "phon"))
     }
+
+    @MainActor func testUsbSetupAndListenerShutdown() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let executable = directory.appendingPathComponent("adb-fixture")
+        let marker = directory.appendingPathComponent("enabled").path
+        let commands = directory.appendingPathComponent("commands").path
+        let script = """
+        #!/bin/sh
+        printf '%s\\n' "$*" >> '\(commands)'
+        if [ "$1" = devices ]; then
+          echo 'phone device'
+          if [ -f '\(marker)' ]; then echo '192.168.1.20:5555 device'; fi
+          exit 0
+        fi
+        case "$*" in
+          *'getprop ro.serialno'*) echo phone ;;
+          *'ip -4 -o addr show'*) echo '3: wlan0 inet 192.168.1.20/24 scope global wlan0' ;;
+          *'tcpip 5555'*) touch '\(marker)'; echo restarting ;;
+          *' usb') rm -f '\(marker)'; echo restarting ;;
+          connect*) echo connected ;;
+          disconnect*) echo disconnected ;;
+          *) exit 99 ;;
+        esac
+        """
+        try script.write(to: executable, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        var settings = BridgeSettings(); settings.adbPath = executable.path; settings.targetSerial = "phone"; settings.autoConnect = false
+        var saved: [BridgeSettings] = []
+        let session = DeviceSession(settings: settings, saveSettings: { saved.append($0) })
+        session.start()
+        for _ in 0..<80 { if session.adb != nil { break }; try await Task.sleep(nanoseconds: 20_000_000) }
+        let enabled = try await session.enableWireless()
+        XCTAssertTrue(enabled.contains("verified")); XCTAssertEqual(session.serial, "192.168.1.20:5555")
+        XCTAssertEqual(session.settings.wirelessSerial, "phone"); XCTAssertEqual(session.transportLabel, "Wi-Fi")
+        let disabled = try await session.disableWireless()
+        XCTAssertTrue(disabled.contains("off")); XCTAssertTrue(session.wirelessEndpoint.isEmpty)
+        XCTAssertEqual(saved.count, 2); XCTAssertTrue(saved.allSatisfy { !$0.autoConnect })
+        let log = try String(contentsOfFile: commands, encoding: .utf8)
+        XCTAssertTrue(log.contains("-s phone tcpip 5555")); XCTAssertTrue(log.contains("-s phone usb"))
+        XCTAssertFalse(log.contains("kill-server")); XCTAssertFalse(log.contains("am start"))
+        await session.shutdown()
+    }
+
+    @MainActor func testTlsPairingAndDisconnect() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let executable = directory.appendingPathComponent("adb-fixture")
+        let script = """
+        #!/bin/sh
+        case "$*" in
+          pair*) echo 'Successfully paired to 192.168.1.20:34567' ;;
+          'mdns services') echo 'adb-phone-abc _adb-tls-connect._tcp 192.168.1.20:45678' ;;
+          *'getprop ro.serialno'*) echo phone ;;
+          *'getprop service.adb.tls.port'*) echo 45678 ;;
+          connect*) echo connected ;;
+          disconnect*) echo disconnected ;;
+          *) exit 99 ;;
+        esac
+        """
+        try script.write(to: executable, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+        var settings = BridgeSettings(); settings.adbPath = executable.path; settings.autoConnect = false
+        var saved: [BridgeSettings] = []
+        let session = DeviceSession(settings: settings, saveSettings: { saved.append($0) })
+        let paired = try await session.pairWireless(address: "192.168.1.20:34567", code: "012345", connectAddress: "")
+        XCTAssertTrue(paired.contains("Encrypted")); XCTAssertTrue(session.wirelessSecure)
+        XCTAssertEqual(session.wirelessEndpoint, "192.168.1.20:45678"); XCTAssertEqual(session.settings.targetSerial, "phone")
+        let encoded = try JSONEncoder().encode(session.settings)
+        XCTAssertFalse(String(decoding: encoded, as: UTF8.self).contains("012345"))
+        let disconnected = try await session.disableWireless()
+        XCTAssertTrue(disconnected.contains("removed")); XCTAssertTrue(session.wirelessEndpoint.isEmpty)
+        XCTAssertEqual(saved.count, 2); XCTAssertTrue(saved.allSatisfy { !$0.autoConnect })
+        await session.shutdown()
+    }
+
 }
