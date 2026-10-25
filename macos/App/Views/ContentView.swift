@@ -45,7 +45,6 @@ enum Page: String, CaseIterable, Identifiable {
 struct ContentView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var session: DeviceSession
-    @Environment(\.openWindow) private var openWindow
     @State private var page: Page? = .home
 
     var body: some View {
@@ -117,7 +116,6 @@ struct ContentView: View {
             }
         }
         .tint(BridgeStyle.accent)
-        .onAppear { BridgeAppDelegate.reopen = { openWindow(id: "dashboard") } }
         .onChange(of: model.ringingCallID, initial: true) { _, id in if id != nil { page = .calls } }
         .onChange(of: page, initial: true) { _, p in model.sensorsVisible = p == .sensors; model.compassVisible = p == .compass; model.cameraVisible = p == .camera }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didChangeOcclusionStateNotification)) { _ in model.updateSensorDemand() }

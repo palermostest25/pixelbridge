@@ -195,6 +195,8 @@ struct SettingsView: View {
     @AppStorage("autoUpdateCompanion") private var updateCompanion = true
     var body: some View {
         Form {
+            StartupSettingsView()
+            Divider()
             TextField("Phone serial", text: $serial)
             Toggle("Connect automatically over USB or Wi-Fi", isOn: $auto)
             Toggle("Bring PixelBridge forward when the phone is connected", isOn: $showOnConnect)

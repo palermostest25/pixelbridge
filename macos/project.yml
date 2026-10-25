@@ -7,8 +7,8 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "0.4.4"
-    CURRENT_PROJECT_VERSION: "10"
+    MARKETING_VERSION: "0.4.5"
+    CURRENT_PROJECT_VERSION: "11"
     DEVELOPMENT_TEAM: ""          # set your Apple Developer Team ID (required for the camera extension)
 packages:
   PixelBridgeKit:
@@ -31,6 +31,7 @@ targets:
       properties:
         CFBundleDisplayName: PixelBridge
         LSApplicationCategoryType: public.app-category.utilities
+        LSUIElement: true
         NSCameraUsageDescription: PixelBridge shows the Pixel's camera feed.
         NSMicrophoneUsageDescription: Use this Mac’s microphone for calls through your connected Pixel.
         NSSystemExtensionUsageDescription: Installs the PixelBridge Camera so other apps can use the Pixel as a webcam.

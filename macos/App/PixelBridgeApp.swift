@@ -1,63 +1,48 @@
 import AppKit
+import Combine
 import PixelBridgeKit
 import SwiftUI
 
 @main
 struct PixelBridgeApp: App {
     @NSApplicationDelegateAdaptor(BridgeAppDelegate.self) private var delegate
-    @StateObject private var model = AppModel()
 
     var body: some Scene {
-        WindowGroup("PixelBridge", id: "dashboard") {
-            ContentView()
-                .environmentObject(model)
-                .environmentObject(model.session)
-                .environmentObject(model.phone)
-                .frame(minWidth: 900, minHeight: 600)
-                .onAppear { delegate.installCallMenu(model) }
+        Settings {
+            SettingsView()
+                .environmentObject(delegate.model)
+                .environmentObject(delegate.model.session)
         }
-        .defaultSize(width: 1120, height: 780)
-        .windowToolbarStyle(.unified)
-        .commands { CommandGroup(after: .newItem) { Button("Show call controls") { delegate.showCallMenu() }.keyboardShortcut("c", modifiers: [.command, .shift]) } }
-
-        Settings { SettingsView().environmentObject(model).environmentObject(model.session) }
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Open PixelBridge") { BridgeAppDelegate.showDashboard { BridgeAppDelegate.reopen?() } }
+                    .keyboardShortcut("1", modifiers: .command)
+                Button("Show call controls") { delegate.showCallMenu() }
+                    .keyboardShortcut("c", modifiers: [.command, .shift])
+            }
+        }
     }
 }
 
-struct MenuBarContent: View {
-    @Environment(\.openWindow) private var openWindow
-    @EnvironmentObject var model: AppModel
-    @EnvironmentObject var session: DeviceSession
-
-    var body: some View {
-        Text(session.isConnected ? "Connected — \(session.deviceProps["ro.product.model"] ?? "Pixel")" : session.state.label)
-        Button("Open PixelBridge") { BridgeAppDelegate.showDashboard { openWindow(id: "dashboard") } }
-        Divider()
-        Button(model.cameraOn ? "Stop camera" : "Start camera") { model.cameraOn ? model.stopCamera() : model.startCamera() }
-            .disabled(!session.isConnected)
-        Button(model.micOn ? "Stop microphone" : "Start microphone") { model.micOn ? model.stopMic() : model.startMic() }
-            .disabled(!session.isConnected)
-        Divider()
-        Toggle("USB internet sharing", isOn: Binding(get: { model.usbSharingEnabled }, set: { model.setInternetSharing($0) }))
-            .disabled(model.tetherBusy || session.serial.isEmpty || session.adb == nil)
-        if !model.tetherMessage.isEmpty { Text(model.tetherMessage) }
-        Toggle("Save power (15 fps)", isOn: $model.savePower)
-        Toggle("Privacy mode", isOn: Binding(get: { model.privacy }, set: { model.setPrivacy($0) }))
-        Divider()
-        Button("Quit PixelBridge") { NSApplication.shared.terminate(nil) }.keyboardShortcut("q")
-    }
-}
-
-/// Closing the dashboard leaves the status item and active bridge alive, without a Dock icon.
-@MainActor final class BridgeAppDelegate: NSObject, NSApplicationDelegate {
+/// The bridge and status item start independently of the dashboard. The dashboard
+/// is created only when requested, so login never restores a window or Dock icon.
+@MainActor final class BridgeAppDelegate: NSObject, NSApplicationDelegate, NSToolbarDelegate {
     static var reopen: (() -> Void)?
+    let model = AppModel()
     private var callMenu: CallStatusItem?
-    private weak var model: AppModel?
-    func installCallMenu(_ model: AppModel) { guard callMenu == nil else { return }; self.model = model; callMenu = CallStatusItem(model: model) }
-    func showCallMenu() { callMenu?.show() }
-    func applicationWillTerminate(_ notification: Notification) { model?.callAudio.stop(); model?.silenceCallRingtone(); model?.closePhoneScreen() }
+    private var dashboard: NSWindow?
+    private var privacySubscription: AnyCancellable?
+    private static let privacyItem = NSToolbarItem.Identifier("PixelBridge.privacy")
     private var windowObservers: [NSObjectProtocol] = []
+
+    func showCallMenu() { callMenu?.show() }
+    func applicationWillTerminate(_ notification: Notification) {
+        model.callAudio.stop(); model.silenceCallRingtone(); model.closePhoneScreen()
+    }
     func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApplication.shared.setActivationPolicy(.accessory)
+        Self.reopen = { [weak self] in self?.openDashboard() }
+        callMenu = CallStatusItem(model: model)
         let center = NotificationCenter.default
         windowObservers.append(center.addObserver(forName: NSWindow.willCloseNotification, object: nil, queue: .main) { note in
             guard let closing = note.object as? NSWindow else { return }
@@ -70,11 +55,58 @@ struct MenuBarContent: View {
         windowObservers.append(center.addObserver(forName: .pixelBridgeShowDashboard, object: nil, queue: .main) { _ in
             Task { @MainActor in Self.showDashboard { Self.reopen?() } }
         })
+        if UserDefaults.standard.object(forKey: "startInMenuBar") as? Bool == false {
+            Self.showDashboard { self.openDashboard() }
+        }
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         Self.showDashboard { Self.reopen?() }; return true
     }
+    private func openDashboard() {
+        if dashboard == nil {
+            let content = ContentView()
+                .environmentObject(model)
+                .environmentObject(model.session)
+                .environmentObject(model.phone)
+                .frame(minWidth: 900, minHeight: 600)
+            let window = NSWindow(contentViewController: NSHostingController(rootView: content))
+            window.title = "PixelBridge"
+            window.identifier = NSUserInterfaceItemIdentifier("dashboard")
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.toolbarStyle = .unified
+            let toolbar = NSToolbar(identifier: "PixelBridge.dashboard")
+            toolbar.delegate = self
+            toolbar.displayMode = .iconOnly
+            window.toolbar = toolbar
+            window.isReleasedWhenClosed = false
+            window.setContentSize(NSSize(width: 1120, height: 780))
+            window.minSize = NSSize(width: 900, height: 600)
+            if !window.setFrameUsingName("PixelBridge.dashboard") { window.center() }
+            window.setFrameAutosaveName("PixelBridge.dashboard")
+            dashboard = window
+        }
+        dashboard?.makeKeyAndOrderFront(nil)
+    }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.toggleSidebar, .flexibleSpace, Self.privacyItem]
+    }
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
+        [.toggleSidebar, .flexibleSpace, Self.privacyItem]
+    }
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier identifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        guard identifier == Self.privacyItem else { return nil }
+        let item = NSToolbarItem(itemIdentifier: identifier)
+        item.label = "Privacy"; item.toolTip = "Pause capture and access to phone data"
+        let button = NSButton(image: NSImage(systemSymbolName: "eye.slash", accessibilityDescription: "Privacy")!, target: self, action: #selector(togglePrivacy))
+        button.setButtonType(.pushOnPushOff)
+        button.bezelStyle = .texturedRounded
+        button.setAccessibilityLabel("Privacy")
+        item.view = button
+        privacySubscription = model.$privacy.sink { [weak button] enabled in button?.state = enabled ? .on : .off }
+        return item
+    }
+    @objc private func togglePrivacy() { model.setPrivacy(!model.privacy) }
     private static func isDashboard(_ window: NSWindow) -> Bool {
         window.title == "PixelBridge" || window.identifier?.rawValue.contains("dashboard") == true
     }
