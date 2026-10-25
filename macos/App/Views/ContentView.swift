@@ -108,12 +108,6 @@ struct ContentView: View {
             }
             .background(BridgeStyle.canvas)
             .navigationTitle("PixelBridge")
-            .toolbar {
-                ToolbarItem {
-                    Toggle(isOn: Binding(get: { model.privacy }, set: { model.setPrivacy($0) })) { Label("Privacy", systemImage: "eye.slash") }
-                        .help("Pause capture and access to phone data")
-                }
-            }
         }
         .tint(BridgeStyle.accent)
         .onChange(of: model.ringingCallID, initial: true) { _, id in if id != nil { page = .calls } }
