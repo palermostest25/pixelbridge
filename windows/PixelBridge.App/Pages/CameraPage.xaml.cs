@@ -21,6 +21,10 @@ public partial class CameraPage : UserControl, IPage
     private string _lensSignature = "";
     private long _lastPreview;
 
+    private async void NativePhoto_Click(object sender, RoutedEventArgs e) => await CaptureAsync(false);
+    private async void NativeVideo_Click(object sender, RoutedEventArgs e) => await CaptureAsync(true);
+    private Task CaptureAsync(bool video) => _c.Capture.RunAsync(_c.Session, video, _c.Settings.ScrcpyPath, () => !_c.PrivacyMode && !_c.CameraRequested);
+
     public CameraPage(AppController c)
     {
         _c = c;
@@ -88,7 +92,9 @@ public partial class CameraPage : UserControl, IPage
             : ("", "Camera is off");
         StartStopText.Text = _c.CameraRequested ? "Stop camera" : "Start camera";
         StartStopGlyph.Text = _c.CameraRequested ? "" : "";
-        StartStop.IsEnabled = _c.Session.IsConnected && !_c.PrivacyMode;
+        StartStop.IsEnabled = _c.Session.IsConnected && !_c.PrivacyMode && !_c.Capture.Running;
+        NativeCaptureButtons.IsEnabled = StartStop.IsEnabled && !_c.CameraRequested;
+        NativeCaptureStatus.Text = _c.CameraRequested ? "Stop the webcam to use Pixel Camera." : _c.Capture.Status;
         RecordText.Text = _c.VideoRecordingActive ? "Stop recording" : "Record 60 s";
         Stats.Text = v.Config is null || !live ? "" :
             $"{v.Config["width"]}×{v.Config["height"]} H.264   {v.BitrateMbps:0.0} Mbps   latency {v.LatencyP50Ms:0} ms (p95 {v.LatencyP95Ms:0})   decoded {v.FramesDecoded}   dropped {v.FramesDropped}";

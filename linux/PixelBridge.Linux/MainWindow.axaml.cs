@@ -205,7 +205,9 @@ public partial class MainWindow : Window
         LiveChip.IsVisible = _m.Video.IsLive;
         LiveText.Text = $"LIVE  ·  {(_m.Video.V4l2Device is { } dev ? $"also on {dev}" : "preview only")}";
         CamButton.Content = _m.CameraOn ? "Stop camera" : "Start camera";
-        CamButton.IsEnabled = on && !_m.Privacy;
+        CamButton.IsEnabled = on && !_m.Privacy && !_m.Capture.Running;
+        NativeCaptureButtons.IsEnabled = CamButton.IsEnabled && !_m.CameraOn;
+        NativeCaptureStatus.Text = _m.CameraOn ? "Stop the webcam to use Pixel Camera." : _m.Capture.Status;
         var lb = FfmpegVideo.FindLoopback();
         LoopbackText.Text = !FfmpegVideo.Available ? "ffmpeg is required: sudo apt install ffmpeg"
             : lb != null ? $"Ready: apps can choose “PixelBridge Camera” ({lb})."
@@ -290,6 +292,10 @@ public partial class MainWindow : Window
             default: _m.LaunchScrcpy(); break;
         }
     }
+
+    private async void NativePhoto_Click(object? sender, RoutedEventArgs e) => await CaptureAsync(false);
+    private async void NativeVideo_Click(object? sender, RoutedEventArgs e) => await CaptureAsync(true);
+    private Task CaptureAsync(bool video) => _m.Capture.RunAsync(_m.Session, video, _m.Settings.ScrcpyPath, () => !_m.Privacy && !_m.CameraOn);
 
     private void Cam_Click(object? s, RoutedEventArgs e) { if (_m.CameraOn) _m.StopCamera(); else _m.StartCamera(); }
     private void Lens_Changed(object? s, SelectionChangedEventArgs e)
