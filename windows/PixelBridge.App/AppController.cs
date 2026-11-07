@@ -142,8 +142,11 @@ public sealed class AppController : IAsyncDisposable
 
     // ---------------------------------------------------------------- streams
 
+    public NativeCapture Capture { get; } = new();
+
     public void StartCamera()
     {
+        if (Capture.Running) { Toast?.Invoke("Close the Pixel Camera window before starting the webcam."); return; }
         if (PrivacyMode) { Toast?.Invoke("Privacy mode is on"); return; }
         CameraRequested = true;
         CameraError = null;
@@ -188,6 +191,7 @@ public sealed class AppController : IAsyncDisposable
     /// <summary>Pause all acquisition immediately: camera, mic and sensors stop on the phone; virtual camera shows the placeholder.</summary>
     public void SetPrivacy(bool on)
     {
+        if (on) Capture.Stop();
         CallAudio.SetAllowed(!on);
         PrivacyMode = on;
         Phone.SetEnabled(!on);
@@ -438,6 +442,7 @@ public sealed class AppController : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        Capture.Stop();
         CallAudio.Dispose();
         Tilt.Enabled = false;
         StopSensorExport();

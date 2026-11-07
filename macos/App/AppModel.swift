@@ -42,6 +42,7 @@ final class AppModel: NSObject, ObservableObject {
     lazy var phone = PhoneWorkspaceModel(session: session)
     let compass = CompassModel()
     let callAudio = USBCallAudio()
+    let capture = NativeCapture()
     @Published private(set) var ringingCallID: String?
     private var callRingtone: NSSound?
     private let decoder = H264Decoder()
@@ -196,7 +197,7 @@ final class AppModel: NSObject, ObservableObject {
     // MARK: streams
 
     func startCamera() {
-        guard !privacy else { return }
+        guard !privacy, !capture.running else { return }
         cameraOn = true; cameraError = nil
         appliedOptical = nil; appliedElectronic = nil; appliedZoom = nil
         fps = 0; frameCount = 0; lastFpsTick = Date()
@@ -275,6 +276,7 @@ final class AppModel: NSObject, ObservableObject {
     func stopLocation() { locationOn = false; session.stopStream("location"); location = nil }
 
     func setPrivacy(_ on: Bool) {
+        if on { capture.stop() }
         privacy = on
         phone.setEnabled(!on)
         callAudio.setAllowed(!on)

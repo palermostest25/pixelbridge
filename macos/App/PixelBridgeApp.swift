@@ -37,6 +37,7 @@ struct PixelBridgeApp: App {
 
     func showCallMenu() { callMenu?.show() }
     func applicationWillTerminate(_ notification: Notification) {
+        model.capture.stop()
         model.callAudio.stop(); model.silenceCallRingtone(); model.closePhoneScreen()
     }
     func applicationDidFinishLaunching(_ notification: Notification) {

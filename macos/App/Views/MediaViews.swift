@@ -62,6 +62,8 @@ struct CameraView: View {
                 .buttonStyle(.borderedProminent).controlSize(.large).disabled(!canOperate)
             }
 
+            NativeCaptureControls(capture: model.capture, allowed: canOperate && !model.cameraOn)
+
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .top, spacing: 24) {
                     previewView.frame(minWidth: 360, maxWidth: .infinity)
@@ -335,5 +337,36 @@ struct Stat: View {
     init(_ t: String, _ v: String) { title = t; value = v }
     var body: some View {
         Card { VStack(alignment: .leading) { Text(title).font(.caption).foregroundStyle(.secondary); Text(value).font(.title3.weight(.semibold)) } }
+    }
+}
+
+
+private struct NativeCaptureControls: View {
+    @EnvironmentObject var model: AppModel
+    @EnvironmentObject var session: DeviceSession
+    @ObservedObject var capture: NativeCapture
+    let allowed: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SettingRow(icon: "camera", title: "Capture to Downloads", subtitle: "Use Pixel Camera’s processing. Finished photos and videos save here automatically.") {
+                HStack {
+                    Button("Take photos…") { open(video: false) }
+                    Button("Record video…") { open(video: true) }
+                }.disabled(!allowed || capture.running)
+            }
+            if !capture.status.isEmpty {
+                Text(capture.status).font(.callout).foregroundStyle(.secondary)
+            } else if model.cameraOn {
+                Text("Stop the webcam to use Pixel Camera.").font(.callout).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func open(video: Bool) {
+        Task {
+            model.closePhoneScreen()
+            await capture.run(session, video: video) { !model.privacy && !model.cameraOn }
+        }
     }
 }

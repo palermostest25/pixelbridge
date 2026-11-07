@@ -105,8 +105,11 @@ public sealed class AppModel : IAsyncDisposable
         }
     }
 
+    public NativeCapture Capture { get; } = new();
+
     public void StartCamera()
     {
+        if (Capture.Running) { Toast?.Invoke("Close the Pixel Camera window before starting the webcam."); return; }
         if (Privacy) return;
         if (!FfmpegVideo.Available) { CameraError = "ffmpeg is not installed (sudo apt install ffmpeg)"; return; }
         CameraOn = true; CameraError = null;
@@ -137,6 +140,7 @@ public sealed class AppModel : IAsyncDisposable
 
     public void SetPrivacy(bool on)
     {
+        if (on) Capture.Stop();
         CallAudio.SetAllowed(!on);
         Privacy = on;
         Phone.SetEnabled(!on);
@@ -198,6 +202,7 @@ public sealed class AppModel : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        Capture.Stop();
         CallAudio.Dispose();
         Video.Dispose();
         await Mic.DisableAsync();
